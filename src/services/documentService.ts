@@ -1,6 +1,6 @@
 import type { UploadUrlResponse, ProcessResponse, DocumentResult } from '../types/document';
 
-const API_BASE_URL = 'https://vxe3nzepie.execute-api.us-east-1.amazonaws.com/dev';
+const API_BASE_URL = 'https://fjdlwf02v8.execute-api.us-east-1.amazonaws.com/dev';
 
 export class DocumentService {
   static async requestUploadUrl(filename: string): Promise<UploadUrlResponse> {
