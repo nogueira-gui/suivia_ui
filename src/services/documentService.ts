@@ -23,17 +23,33 @@ export class DocumentService {
   }
 
   static async uploadToS3(uploadUrl: string, file: File): Promise<void> {
-    const response = await fetch(uploadUrl, {
-      method: 'PUT',
-      body: file,
-      headers: {
-        'Content-Type': 'application/pdf',
-      },
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      
+      xhr.open('PUT', uploadUrl, true);
+      xhr.setRequestHeader('Content-Type', 'application/pdf');
+      
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve();
+        } else {
+          reject(new Error(`Failed to upload file to S3: ${xhr.status} ${xhr.statusText} - ${xhr.responseText}`));
+        }
+      };
+      
+      xhr.onerror = () => {
+        reject(new Error(`Network error during S3 upload. Status: ${xhr.status}`));
+      };
+      
+      xhr.ontimeout = () => {
+        reject(new Error('Upload to S3 timed out'));
+      };
+      
+      // Timeout de 5 minutos para uploads grandes
+      xhr.timeout = 300000;
+      
+      xhr.send(file);
     });
-
-    if (!response.ok) {
-      throw new Error(`Failed to upload file to S3: ${response.statusText}`);
-    }
   }
 
   static async processDocument(documentId: string): Promise<ProcessResponse> {
