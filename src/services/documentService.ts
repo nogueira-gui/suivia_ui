@@ -53,7 +53,7 @@ export class DocumentService {
   }
 
   static async processDocument(documentId: string): Promise<ProcessResponse> {
-    const response = await fetch(`${API_BASE_URL}/documents`, {
+    const response = await fetch(`${API_BASE_URL}/documents/process`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
