@@ -66,14 +66,29 @@ export function useDocumentUpload() {
       await DocumentService.uploadToS3(uploadData.upload_url, file);
 
       updateProgress('processing', 'Iniciando processamento OCR...', 50);
-      await DocumentService.processDocument(uploadData.document_id);
+      // ⭐ NOVO: Salva o job_id retornado pelo /process
+      const processResponse = await DocumentService.processDocument(uploadData.document_id);
+      const jobId = processResponse.job_id;
 
-      updateProgress('processing', 'Processando documento...', 60);
+      // ⭐ NOVO: Não precisa mais aguardar! Passa o job_id direto para o polling
+      updateProgress('processing', 'Verificando status do processamento...', 60);
       const finalResult = await DocumentService.pollDocumentStatus(
         uploadData.document_id,
-        (intermediateResult) => {
-          const progressValue = 60 + Math.random() * 30;
-          updateProgress('processing', 'Extraindo texto do documento...', progressValue);
+        jobId,  // ⭐ PASSA O JOB_ID AQUI
+        (_result, attempt, elapsed) => {
+          // Calcula progresso baseado no tempo decorrido (estimativa de 30s a 3min)
+          const estimatedMaxTime = 180; // 3 minutos
+          const progressValue = Math.min(90, 60 + (elapsed / estimatedMaxTime) * 30);
+          
+          const mins = Math.floor(elapsed / 60);
+          const secs = elapsed % 60;
+          const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+          
+          updateProgress(
+            'processing', 
+            `Processando documento... (tentativa ${attempt}, tempo: ${timeStr})`, 
+            progressValue
+          );
         }
       );
 

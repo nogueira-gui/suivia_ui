@@ -88,7 +88,7 @@ function App() {
 
         <div className="mt-8 text-center text-sm text-gray-500">
           <p>Apenas arquivos PDF são aceitos. Tamanho máximo: 100MB</p>
-          <p className="mt-1">O processamento pode levar de 1 a 5 minutos</p>
+          <p className="mt-1">O processamento geralmente leva de 30 segundos a 3 minutos</p>
         </div>
       </div>
     </div>

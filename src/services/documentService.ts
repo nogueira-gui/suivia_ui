@@ -1,6 +1,6 @@
 import type { UploadUrlResponse, ProcessResponse, DocumentResult } from '../types/document';
 
-const API_BASE_URL = 'https://fjdlwf02v8.execute-api.us-east-1.amazonaws.com/dev';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export class DocumentService {
   static async requestUploadUrl(filename: string): Promise<UploadUrlResponse> {
@@ -11,6 +11,7 @@ export class DocumentService {
       },
       body: JSON.stringify({
         filename,
+        document_type: "nota_fiscal",
         content_type: 'application/pdf',
       }),
     });
@@ -85,32 +86,78 @@ export class DocumentService {
     return response.json();
   }
 
-  static async pollDocumentStatus(
-    documentId: string,
-    onProgress?: (result: DocumentResult) => void
-  ): Promise<DocumentResult> {
-    const maxAttempts = 60;
-    const pollInterval = 5000;
+  /**
+   * Verifica o status do job e processa automaticamente se concluído
+   * Este é o novo endpoint que faz polling ativo no Textract
+   * 
+   * @param documentId - ID do documento
+   * @param jobId - (Opcional) Job ID retornado pelo /process. Se fornecido, consulta direto o Textract
+   */
+  static async checkDocumentStatus(documentId: string, jobId?: string): Promise<DocumentResult> {
+    const response = await fetch(`${API_BASE_URL}/documents/${documentId}/check-status`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      // ⭐ NOVO: Passa job_id no body se fornecido
+      body: jobId ? JSON.stringify({ job_id: jobId }) : undefined,
+    });
 
-    for (let i = 0; i < maxAttempts; i++) {
-      const result = await this.getDocumentStatus(documentId);
-
-      if (onProgress) {
-        onProgress(result);
-      }
-
-      if (result.status === 'COMPLETED') {
-        return result;
-      }
-
-      if (result.status === 'ERROR') {
-        throw new Error(result.error || 'Document processing failed');
-      }
-
-      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to check document status: ${response.statusText} - ${errorText}`);
     }
 
-    throw new Error('Timeout: Document processing took too long');
+    return response.json();
+  }
+
+  static async pollDocumentStatus(
+    documentId: string,
+    jobId?: string,
+    onProgress?: (result: DocumentResult, attempt: number, elapsed: number) => void
+  ): Promise<DocumentResult> {
+    // Timeout de 10 minutos (conforme recomendação do backend)
+    const maxAttempts = 120; // 120 tentativas * 5 segundos = 10 minutos
+    const pollInterval = 5000; // 5 segundos entre tentativas
+    const startTime = Date.now();
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+
+      try {
+        // ⭐ NOVO: Usa o novo endpoint que faz polling ativo no Textract COM job_id
+        const result = await this.checkDocumentStatus(documentId, jobId);
+
+        if (onProgress) {
+          onProgress(result, attempt, elapsedSeconds);
+        }
+
+        if (result.status === 'COMPLETED') {
+          return result;
+        }
+
+        if (result.status === 'ERROR') {
+          throw new Error(result.error || 'Falha no processamento do documento');
+        }
+
+        // Se ainda está processando, aguarda antes da próxima tentativa
+        if (attempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, pollInterval));
+        }
+      } catch (err) {
+        // Se for erro de timeout ou rede, tenta novamente
+        if (attempt === maxAttempts) {
+          throw err;
+        }
+        
+        // Aguarda um pouco mais em caso de erro (backoff)
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+      }
+    }
+
+    throw new Error(
+      `Timeout: O processamento do documento excedeu o tempo máximo de ${maxAttempts * pollInterval / 60000} minutos`
+    );
   }
 
   static downloadText(text: string, filename: string): void {
