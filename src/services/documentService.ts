@@ -3,17 +3,52 @@ import type { UploadUrlResponse, ProcessResponse, DocumentResult } from '../type
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export class DocumentService {
-  static async requestUploadUrl(filename: string): Promise<UploadUrlResponse> {
+  /**
+   * Detecta o content-type baseado na extensão do arquivo
+   */
+  private static getContentType(filename: string): string {
+    const extension = filename.split('.').pop()?.toLowerCase();
+    switch (extension) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
+  static async requestUploadUrl(
+    filename: string, 
+    extractionMethod?: string,
+    documentType?: string
+  ): Promise<UploadUrlResponse> {
+    const contentType = this.getContentType(filename);
+    
+    const body: Record<string, any> = {
+      filename,
+      content_type: contentType,
+    };
+    
+    // Adiciona document_type apenas se fornecido
+    if (documentType) {
+      body.document_type = documentType;
+    }
+    
+    // Adiciona extraction_method apenas se fornecido
+    if (extractionMethod) {
+      body.extraction_method = extractionMethod;
+    }
+    
     const response = await fetch(`${API_BASE_URL}/documents`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        filename,
-        document_type: "nota_fiscal",
-        content_type: 'application/pdf',
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -23,12 +58,12 @@ export class DocumentService {
     return response.json();
   }
 
-  static async uploadToS3(uploadUrl: string, file: File): Promise<void> {
+  static async uploadToS3(uploadUrl: string, file: File, contentType: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       
       xhr.open('PUT', uploadUrl, true);
-      xhr.setRequestHeader('Content-Type', 'application/pdf');
+      xhr.setRequestHeader('Content-Type', contentType);
       
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
@@ -53,16 +88,22 @@ export class DocumentService {
     });
   }
 
-  static async processDocument(documentId: string): Promise<ProcessResponse> {
+  static async processDocument(documentId: string, useLlm?: boolean): Promise<ProcessResponse> {
+    const body: Record<string, any> = {
+      documentId: documentId,
+    };
+    
+    // Adiciona use_llm apenas se fornecido
+    if (useLlm !== undefined) {
+      body.use_llm = useLlm;
+    }
+    
     const response = await fetch(`${API_BASE_URL}/documents/process`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        process: true,
-        document_id: documentId,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -99,8 +140,8 @@ export class DocumentService {
       headers: {
         'Content-Type': 'application/json',
       },
-      // ⭐ NOVO: Passa job_id no body se fornecido
-      body: jobId ? JSON.stringify({ job_id: jobId }) : undefined,
+      // ⭐ NOVO: Passa jobId no body se fornecido (camelCase para backend Java)
+      body: jobId ? JSON.stringify({ jobId: jobId }) : undefined,
     });
 
     if (!response.ok) {
@@ -108,7 +149,13 @@ export class DocumentService {
       throw new Error(`Failed to check document status: ${response.statusText} - ${errorText}`);
     }
 
-    return response.json();
+    const data = await response.json();
+    // Debug: verificar se extraction_method está presente
+    if (process.env.NODE_ENV === 'development') {
+      console.log('check-status response:', data);
+      console.log('extraction_method:', data.extraction_method || data.extractionMethod);
+    }
+    return data;
   }
 
   static async pollDocumentStatus(

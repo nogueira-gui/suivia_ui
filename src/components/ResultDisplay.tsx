@@ -11,17 +11,28 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
-    if (result.raw_text) {
-      await navigator.clipboard.writeText(result.raw_text);
+    const rawText =
+      result.raw_text ||
+      result.rawText ||
+      result.extracted?.raw_text ||
+      result.extracted?.rawText;
+    if (rawText) {
+      await navigator.clipboard.writeText(rawText);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
   };
 
   const handleDownload = () => {
-    if (result.raw_text) {
-      const filename = `extracted_text_${result.document_id.slice(0, 8)}.txt`;
-      DocumentService.downloadText(result.raw_text, filename);
+    const rawText =
+      result.raw_text ||
+      result.rawText ||
+      result.extracted?.raw_text ||
+      result.extracted?.rawText;
+    const documentId = result.document_id || result.documentId || 'unknown';
+    if (rawText) {
+      const filename = `extracted_text_${documentId.slice(0, 8)}.txt`;
+      DocumentService.downloadText(rawText, filename);
     }
   };
 
@@ -63,9 +74,144 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
     return statusMap[status || ''] || { label: status || 'Desconhecido', color: 'text-gray-700', bgColor: 'bg-gray-100' };
   };
 
-  const isNotaFiscal = result.extracted?.document_type === 'nota_fiscal';
+  const renderReciboData = (recibo: any) => {
+    return (
+      <>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {recibo.numero && (
+            <div className="flex items-start space-x-3">
+              <Hash className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-xs text-gray-500">Número do Recibo</p>
+                <p className="text-sm font-medium text-gray-900">{recibo.numero}</p>
+              </div>
+            </div>
+          )}
+
+          {recibo.valor && (
+            <div className="flex items-start space-x-3">
+              <DollarSign className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-xs text-gray-500">Valor</p>
+                <p className="text-lg font-semibold text-gray-900">{formatCurrency(recibo.valor)}</p>
+              </div>
+            </div>
+          )}
+
+          {recibo.data_emissao && (
+            <div className="flex items-start space-x-3">
+              <Calendar className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-xs text-gray-500">Data de Emissão</p>
+                <p className="text-sm font-medium text-gray-900">{formatDate(recibo.data_emissao)}</p>
+              </div>
+            </div>
+          )}
+
+          {recibo.data_pagamento && (
+            <div className="flex items-start space-x-3">
+              <Calendar className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-xs text-gray-500">Data de Pagamento</p>
+                <p className="text-sm font-medium text-gray-900">{formatDate(recibo.data_pagamento)}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {(recibo.pagador || recibo.beneficiario || recibo.profissional) && (
+          <div className="pt-4 border-t space-y-3">
+            <h6 className="font-medium text-gray-700 text-sm">Partes Envolvidas</h6>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {recibo.pagador && (recibo.pagador.nome || recibo.pagador.cpf_cnpj) && (
+                <div className="flex items-start space-x-3">
+                  <Building2 className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-xs text-gray-500">Pagador</p>
+                    <p className="text-sm font-medium text-gray-900">{recibo.pagador.nome || 'N/A'}</p>
+                    {recibo.pagador.cpf_cnpj && (
+                      <p className="text-xs text-gray-600 font-mono">
+                        {recibo.pagador.cpf_cnpj.length === 11 
+                          ? recibo.pagador.cpf_cnpj.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
+                          : formatCNPJ(recibo.pagador.cpf_cnpj)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {recibo.beneficiario && (recibo.beneficiario.nome || recibo.beneficiario.cpf_cnpj) && (
+                <div className="flex items-start space-x-3">
+                  <Building2 className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-xs text-gray-500">Beneficiário</p>
+                    <p className="text-sm font-medium text-gray-900">{recibo.beneficiario.nome || 'N/A'}</p>
+                    {recibo.beneficiario.cpf_cnpj && (
+                      <p className="text-xs text-gray-600 font-mono">
+                        {recibo.beneficiario.cpf_cnpj.length === 11 
+                          ? recibo.beneficiario.cpf_cnpj.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
+                          : formatCNPJ(recibo.beneficiario.cpf_cnpj)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {recibo.profissional && (recibo.profissional.nome || recibo.profissional.cpf) && (
+                <div className="flex items-start space-x-3">
+                  <Building2 className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-xs text-gray-500">Profissional</p>
+                    <p className="text-sm font-medium text-gray-900">{recibo.profissional.nome || 'N/A'}</p>
+                    {recibo.profissional.cpf && (
+                      <p className="text-xs text-gray-600 font-mono">
+                        {recibo.profissional.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}
+                      </p>
+                    )}
+                    {recibo.profissional.registro_profissional && (
+                      <p className="text-xs text-gray-500">Registro: {recibo.profissional.registro_profissional}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {recibo.descricao && (
+          <div className="pt-4 border-t">
+            <p className="text-xs text-gray-500 mb-1">Descrição</p>
+            <p className="text-sm text-gray-900">{recibo.descricao}</p>
+          </div>
+        )}
+
+        {recibo.observacoes && (
+          <div className="pt-4 border-t">
+            <p className="text-xs text-gray-500 mb-1">Observações</p>
+            <p className="text-sm text-gray-700">{recibo.observacoes}</p>
+          </div>
+        )}
+      </>
+    );
+  };
+
+  const documentType = result.extracted?.document_type || 'generic';
+  const isNotaFiscal = documentType === 'nota_fiscal';
+  const isRecibo = documentType === 'recibo';
+  const isContrato = documentType === 'contrato';
+  const isBoleto = documentType === 'boleto';
+  const isOrdemServico = documentType === 'ordem_servico';
   const hasError = !!result.extracted?.error;
   const notaFiscalData = result.extracted?.nota_fiscal;
+  // Suporta ambos os formatos: snake_case e camelCase
+  const extractionMethod = result.extraction_method || result.extractionMethod;
+  const isDetectText = extractionMethod === 'detect_text';
+  const rawText =
+    result.raw_text ||
+    result.rawText ||
+    result.extracted?.raw_text ||
+    result.extracted?.rawText;
+  const documentId = result.document_id || result.documentId || 'unknown';
 
   return (
     <div className="space-y-4">
@@ -81,9 +227,17 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
           <div>
             <p className="text-gray-600">Document ID</p>
             <p className="font-mono text-xs text-gray-900 truncate">
-              {result.document_id}
+              {documentId}
             </p>
           </div>
+          {documentType && documentType !== 'generic' && (
+            <div>
+              <p className="text-gray-600">Tipo de Documento</p>
+              <p className="font-semibold text-gray-900 capitalize">
+                {documentType.replace(/_/g, ' ')}
+              </p>
+            </div>
+          )}
           {result.extracted && !isNotaFiscal && (
             <>
               <div>
@@ -109,8 +263,50 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
         </div>
       </div>
 
-      {/* Nota Fiscal Data - Structured */}
-      {isNotaFiscal && notaFiscalData && (
+      {/* Se for detect_text, exibe apenas o raw_text */}
+      {isDetectText && rawText && (
+        <div className="border border-gray-200 rounded-lg overflow-hidden">
+          <div className="bg-gray-50 border-b border-gray-200 p-4 flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <FileText className="w-5 h-5 text-gray-600" />
+              <h4 className="font-medium text-gray-900">Texto Extraído (Detect Text)</h4>
+            </div>
+            <div className="flex space-x-2">
+              <button
+                onClick={handleCopy}
+                className="flex items-center space-x-1 px-3 py-1.5 text-sm bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+              >
+                {copied ? (
+                  <>
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <span className="text-green-600">Copiado!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>Copiar</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={handleDownload}
+                className="flex items-center space-x-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                <span>Baixar</span>
+              </button>
+            </div>
+          </div>
+          <div className="p-6 bg-white">
+            <pre className="text-sm text-gray-800 whitespace-pre-wrap font-mono leading-relaxed">
+              {rawText}
+            </pre>
+          </div>
+        </div>
+      )}
+
+      {/* Nota Fiscal Data - Structured (apenas se não for detect_text) */}
+      {!isDetectText && isNotaFiscal && notaFiscalData && (
         <div className="border border-blue-200 bg-blue-50 rounded-lg overflow-hidden">
           <div className="bg-blue-100 border-b border-blue-200 p-4 flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -292,8 +488,22 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
         </div>
       )}
 
-      {/* Nota Fiscal Data - Raw (fallback) */}
-      {isNotaFiscal && result.extracted?.raw_expense_data && !notaFiscalData && (
+      {/* Recibo Data - Structured */}
+      {/* Mostra recibo estruturado mesmo se for detect_text, desde que tenha dados estruturados */}
+      {isRecibo && result.extracted?.recibo && (
+        <div className="border border-green-200 bg-green-50 rounded-lg overflow-hidden">
+          <div className="bg-green-100 border-b border-green-200 p-4 flex items-center space-x-2">
+            <Receipt className="w-5 h-5 text-green-600" />
+            <h4 className="font-medium text-green-900">Recibo</h4>
+          </div>
+          <div className="p-6 bg-white space-y-6">
+            {renderReciboData(result.extracted.recibo)}
+          </div>
+        </div>
+      )}
+
+      {/* Nota Fiscal Data - Raw (fallback) - apenas se não for detect_text */}
+      {!isDetectText && isNotaFiscal && result.extracted?.raw_expense_data && !notaFiscalData && (
         <div className="border border-blue-200 bg-blue-50 rounded-lg overflow-hidden">
           <div className="bg-blue-100 border-b border-blue-200 p-4 flex items-center space-x-2">
             <Receipt className="w-5 h-5 text-blue-600" />
@@ -336,7 +546,8 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
         </div>
       )}
 
-      {result.raw_text && (
+      {/* Texto Extraído (apenas se não for detect_text, pois já foi exibido acima) */}
+      {!isDetectText && rawText && (
         <div className="border border-gray-200 rounded-lg overflow-hidden">
           <div className="bg-gray-50 border-b border-gray-200 p-4 flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -371,7 +582,7 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
           </div>
           <div className="p-4 bg-white max-h-96 overflow-y-auto">
             <pre className="text-sm text-gray-800 whitespace-pre-wrap font-mono leading-relaxed">
-              {result.raw_text}
+              {rawText}
             </pre>
           </div>
         </div>

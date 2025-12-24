@@ -5,8 +5,14 @@ import { ProgressIndicator } from './components/ProgressIndicator';
 import { ResultDisplay } from './components/ResultDisplay';
 import { useDocumentUpload } from './hooks/useDocumentUpload';
 
+type ExtractionMethod = 'detect_text' | 'analyze_document' | 'analyze_expense';
+type DocumentType = 'nota_fiscal' | 'recibo' | 'contrato' | 'boleto' | 'ordem_servico' | 'generic' | '';
+
 function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [extractionMethod, setExtractionMethod] = useState<ExtractionMethod>('detect_text');
+  const [documentType, setDocumentType] = useState<DocumentType>('');
+  const [useLlm, setUseLlm] = useState<boolean>(false);
   const { progress, result, error, isUploading, uploadDocument, reset } = useDocumentUpload();
 
   const handleFileSelect = (file: File) => {
@@ -15,12 +21,14 @@ function App() {
 
   const handleUpload = async () => {
     if (selectedFile) {
-      await uploadDocument(selectedFile);
+      await uploadDocument(selectedFile, extractionMethod, documentType || undefined, useLlm);
     }
   };
 
   const handleReset = () => {
     setSelectedFile(null);
+    setDocumentType('');
+    setUseLlm(false);
     reset();
   };
 
@@ -40,6 +48,67 @@ function App() {
         <div className="bg-white rounded-xl shadow-lg p-8 space-y-6">
           {!result && !error && (
             <>
+              <div className="space-y-2">
+                <label htmlFor="document-type" className="block text-sm font-medium text-gray-700">
+                  Tipo de Documento <span className="text-gray-400 font-normal">(Opcional)</span>
+                </label>
+                <select
+                  id="document-type"
+                  value={documentType}
+                  onChange={(e) => setDocumentType(e.target.value as DocumentType)}
+                  disabled={isUploading}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">Selecione um tipo (opcional)</option>
+                  <option value="nota_fiscal">Nota Fiscal</option>
+                  <option value="recibo">Recibo</option>
+                  <option value="contrato">Contrato</option>
+                  <option value="boleto">Boleto</option>
+                  <option value="ordem_servico">Ordem de Serviço</option>
+                  <option value="generic">Genérico</option>
+                </select>
+                <p className="text-xs text-gray-500">
+                  O tipo de documento ajuda a formatar melhor os resultados da extração.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="extraction-method" className="block text-sm font-medium text-gray-700">
+                  Método de Extração
+                </label>
+                <select
+                  id="extraction-method"
+                  value={extractionMethod}
+                  onChange={(e) => setExtractionMethod(e.target.value as ExtractionMethod)}
+                  disabled={isUploading}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="detect_text">Detect Text (Mais rápido, texto simples)</option>
+                  <option value="analyze_document">Analyze Document (FORMS e TABLES, mais detalhado)</option>
+                  <option value="analyze_expense">Analyze Expense (Otimizado para notas fiscais)</option>
+                </select>
+                <p className="text-xs text-gray-500">
+                  Escolha o método de extração do Textract. Analyze Expense é recomendado para notas fiscais.
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="use-llm"
+                  checked={useLlm}
+                  onChange={(e) => setUseLlm(e.target.checked)}
+                  disabled={isUploading}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50"
+                />
+                <label htmlFor="use-llm" className="flex-1 text-sm font-medium text-gray-700 cursor-pointer">
+                  Usar LLM para correção do contrato JSON
+                </label>
+              </div>
+              <p className="text-xs text-gray-500 -mt-2">
+                Quando habilitado, o LLM processa o texto extraído para melhorar a estruturação dos dados em JSON.
+              </p>
+
               <FileUploader
                 onFileSelect={handleFileSelect}
                 disabled={isUploading}
@@ -87,7 +156,7 @@ function App() {
         </div>
 
         <div className="mt-8 text-center text-sm text-gray-500">
-          <p>Apenas arquivos PDF são aceitos. Tamanho máximo: 100MB</p>
+          <p>Arquivos aceitos: PDF, JPG, JPEG ou PNG. Tamanho máximo: 100MB</p>
           <p className="mt-1">O processamento geralmente leva de 30 segundos a 3 minutos</p>
         </div>
       </div>

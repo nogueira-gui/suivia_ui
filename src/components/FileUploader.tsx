@@ -12,8 +12,22 @@ export function FileUploader({ onFileSelect, disabled }: FileUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const validateFile = (file: File): string | null => {
-    if (file.type !== 'application/pdf') {
-      return 'Apenas arquivos PDF são aceitos';
+    // Aceita PDF e imagens (JPG, JPEG, PNG)
+    const allowedTypes = [
+      'application/pdf',
+      'image/jpeg',
+      'image/jpg',
+      'image/png'
+    ];
+    
+    if (!allowedTypes.includes(file.type)) {
+      // Verifica também pela extensão do arquivo
+      const extension = file.name.split('.').pop()?.toLowerCase();
+      const allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png'];
+      
+      if (!extension || !allowedExtensions.includes(extension)) {
+        return 'Apenas arquivos PDF, JPG, JPEG ou PNG são aceitos';
+      }
     }
 
     const maxSize = 100 * 1024 * 1024;
@@ -57,7 +71,7 @@ export function FileUploader({ onFileSelect, disabled }: FileUploaderProps) {
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/pdf"
+        accept="application/pdf,image/jpeg,image/jpg,image/png,.pdf,.jpg,.jpeg,.png"
         onChange={handleFileChange}
         className="hidden"
         disabled={disabled}
@@ -72,7 +86,7 @@ export function FileUploader({ onFileSelect, disabled }: FileUploaderProps) {
           <Upload className="w-12 h-12 text-gray-400" />
           <div className="text-center">
             <p className="text-sm font-medium text-gray-700">
-              Clique para selecionar um arquivo PDF
+              Clique para selecionar um arquivo (PDF, JPG, JPEG ou PNG)
             </p>
             <p className="text-xs text-gray-500 mt-1">
               Tamanho máximo: 100MB

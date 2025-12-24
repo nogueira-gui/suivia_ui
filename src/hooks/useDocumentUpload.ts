@@ -52,7 +52,12 @@ export function useDocumentUpload() {
     }
   }, []);
 
-  const uploadDocument = useCallback(async (file: File) => {
+  const uploadDocument = useCallback(async (
+    file: File, 
+    extractionMethod?: string,
+    documentType?: string,
+    useLlm?: boolean
+  ) => {
     setIsUploading(true);
     setError(null);
     setResult(null);
@@ -60,20 +65,39 @@ export function useDocumentUpload() {
 
     try {
       updateProgress('requesting_url', 'Solicitando URL de upload...', 10);
-      const uploadData = await DocumentService.requestUploadUrl(file.name);
+      const uploadData = await DocumentService.requestUploadUrl(
+        file.name, 
+        extractionMethod,
+        documentType
+      );
 
       updateProgress('uploading', 'Enviando arquivo para S3...', 30);
-      await DocumentService.uploadToS3(uploadData.upload_url, file);
+      // Suporta ambos os formatos: snake_case e camelCase
+      const uploadUrl = uploadData.upload_url || uploadData.uploadUrl;
+      const contentType = uploadData.content_type || uploadData.contentType || 'application/octet-stream';
+      
+      if (!uploadUrl) {
+        throw new Error('URL de upload não fornecida pelo servidor');
+      }
+      
+      await DocumentService.uploadToS3(uploadUrl, file, contentType);
 
       updateProgress('processing', 'Iniciando processamento OCR...', 50);
       // ⭐ NOVO: Salva o job_id retornado pelo /process
-      const processResponse = await DocumentService.processDocument(uploadData.document_id);
-      const jobId = processResponse.job_id;
+      const documentId = uploadData.document_id || uploadData.documentId;
+      
+      if (!documentId) {
+        throw new Error('ID do documento não fornecido pelo servidor');
+      }
+      
+      const processResponse = await DocumentService.processDocument(documentId, useLlm);
+      // Suporta ambos os formatos: snake_case e camelCase
+      const jobId = processResponse.jobId || processResponse.job_id;
 
       // ⭐ NOVO: Não precisa mais aguardar! Passa o job_id direto para o polling
       updateProgress('processing', 'Verificando status do processamento...', 60);
       const finalResult = await DocumentService.pollDocumentStatus(
-        uploadData.document_id,
+        documentId,
         jobId,  // ⭐ PASSA O JOB_ID AQUI
         (_result, attempt, elapsed) => {
           // Calcula progresso baseado no tempo decorrido (estimativa de 30s a 3min)
