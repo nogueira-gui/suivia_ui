@@ -1,4 +1,4 @@
-export type DocumentStatus = 'PENDING_UPLOAD' | 'PROCESSING' | 'COMPLETED' | 'ERROR';
+export type DocumentStatus = 'PENDING_UPLOAD' | 'PROCESSING' | 'COMPLETED' | 'ERROR' | 'PENDING_REPROCESS';
 
 export interface UploadUrlResponse {
   document_id?: string;
@@ -36,6 +36,10 @@ export interface DocumentResult {
   rawText?: string;
   extraction_method?: string;
   extractionMethod?: string;
+  job_status?: string;
+  jobStatus?: string;
+  job_message?: string;
+  jobMessage?: string;
   extracted?: {
     // Para documentos genéricos
     line_count?: number;
@@ -56,28 +60,42 @@ export interface DocumentResult {
 }
 
 export interface NotaFiscalData {
-  nota_fiscal: {
-    cabecalho: {
-      numero?: string;
-      serie?: string;
-      chave_acesso?: string;
-      data_emissao?: string;
-      valor_total?: number;
-      cnpj_emitente?: string;
-      razao_social_emitente?: string;
-      cnpj_destinatario?: string;
-      tipo_nota?: string;
-      razao_social_destinatario?: string;
-    };
-    itens: Array<{
-      numero_item?: number;
-      descricao?: string;
-      quantidade?: number;
-      valor_unitario?: number;
-      valor_total?: number;
-      codigo_produto?: string;
-    }>;
+  cabecalho: {
+    numero?: string;
+    serie?: string;
+    chave_acesso?: string;
+    data_emissao?: string;
+    valor_total?: number;
+    cnpj_emitente?: string;
+    razao_social_emitente?: string;
+    cnpj_destinatario?: string;
+    tipo_nota?: string;
+    razao_social_destinatario?: string;
+    valor_produtos?: number;
+    valor_icms?: number;
+    valor_ipi?: number;
+    valor_pis?: number;
+    valor_cofins?: number;
+    valor_frete?: number;
+    valor_desconto?: number;
+    natureza_operacao?: string;
+    numero_pedido?: string;
   };
+  itens: Array<{
+    numero_item?: number;
+    descricao?: string;
+    quantidade?: number;
+    unidade?: string;
+    valor_unitario?: number;
+    valor_total?: number;
+    codigo_produto?: string;
+    ncm?: string;
+    cfop?: string;
+    valor_icms?: number;
+    aliquota_icms?: number;
+    valor_ipi?: number;
+    aliquota_ipi?: number;
+  }>;
   status?: string;
   confianca_extracao?: number;
   mensagens_validacao?: string[];

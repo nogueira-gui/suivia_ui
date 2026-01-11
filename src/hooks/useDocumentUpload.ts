@@ -56,7 +56,8 @@ export function useDocumentUpload() {
     file: File, 
     extractionMethod?: string,
     documentType?: string,
-    useLlm?: boolean
+    useLlm?: boolean,
+    forceReprocess?: boolean
   ) => {
     setIsUploading(true);
     setError(null);
@@ -90,7 +91,7 @@ export function useDocumentUpload() {
         throw new Error('ID do documento não fornecido pelo servidor');
       }
       
-      const processResponse = await DocumentService.processDocument(documentId, useLlm);
+      const processResponse = await DocumentService.processDocument(documentId, useLlm, forceReprocess);
       // Suporta ambos os formatos: snake_case e camelCase
       const jobId = processResponse.jobId || processResponse.job_id;
 
@@ -129,6 +130,64 @@ export function useDocumentUpload() {
     }
   }, [updateProgress, startTimer, stopTimer]);
 
+  const reprocessDocument = useCallback(async (
+    documentId: string,
+    useLlm?: boolean
+  ) => {
+    setIsUploading(true);
+    setError(null);
+    setResult(null);
+    startTimer();
+
+    try {
+      updateProgress('processing', 'Iniciando reprocessamento...', 50);
+      
+      const processResponse = await DocumentService.processDocument(documentId, useLlm, true);
+      // Suporta ambos os formatos: snake_case e camelCase
+      const jobId = processResponse.jobId || processResponse.job_id;
+
+      // Se já está completo (não precisa reprocessar), retorna o resultado
+      if (processResponse.status === 'COMPLETED' && !jobId) {
+        const documentResult = await DocumentService.getDocumentStatus(documentId);
+        updateProgress('completed', 'Reprocessamento concluído!', 100);
+        setResult(documentResult);
+        stopTimer();
+        return;
+      }
+
+      updateProgress('processing', 'Verificando status do reprocessamento...', 60);
+      const finalResult = await DocumentService.pollDocumentStatus(
+        documentId,
+        jobId,
+        (_result, attempt, elapsed) => {
+          const estimatedMaxTime = 180; // 3 minutos
+          const progressValue = Math.min(90, 60 + (elapsed / estimatedMaxTime) * 30);
+          
+          const mins = Math.floor(elapsed / 60);
+          const secs = elapsed % 60;
+          const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+          
+          updateProgress(
+            'processing', 
+            `Reprocessando documento... (tentativa ${attempt}, tempo: ${timeStr})`, 
+            progressValue
+          );
+        }
+      );
+
+      updateProgress('completed', 'Reprocessamento concluído!', 100);
+      setResult(finalResult);
+      stopTimer();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erro desconhecido';
+      setError(errorMessage);
+      updateProgress('error', errorMessage, 0);
+      stopTimer();
+    } finally {
+      setIsUploading(false);
+    }
+  }, [updateProgress, startTimer, stopTimer]);
+
   const reset = useCallback(() => {
     setProgress({
       step: 'idle',
@@ -149,6 +208,7 @@ export function useDocumentUpload() {
     error,
     isUploading,
     uploadDocument,
+    reprocessDocument,
     reset,
   };
 }

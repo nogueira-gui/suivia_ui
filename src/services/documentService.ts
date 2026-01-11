@@ -1,6 +1,24 @@
 import type { UploadUrlResponse, ProcessResponse, DocumentResult } from '../types/document';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://hjutldvak8.execute-api.us-east-1.amazonaws.com/dev';
+const API_KEY = import.meta.env.VITE_API_KEY || '';
+
+/**
+ * Cria headers padrão para requisições à API Gateway
+ */
+function getHeaders(includeContentType: boolean = true): HeadersInit {
+  const headers: HeadersInit = {};
+  
+  if (includeContentType) {
+    headers['Content-Type'] = 'application/json';
+  }
+  
+  if (API_KEY) {
+    headers['x-api-key'] = API_KEY;
+  }
+  
+  return headers;
+}
 
 export class DocumentService {
   /**
@@ -45,9 +63,7 @@ export class DocumentService {
     
     const response = await fetch(`${API_BASE_URL}/documents`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getHeaders(),
       body: JSON.stringify(body),
     });
 
@@ -88,7 +104,7 @@ export class DocumentService {
     });
   }
 
-  static async processDocument(documentId: string, useLlm?: boolean): Promise<ProcessResponse> {
+  static async processDocument(documentId: string, useLlm?: boolean, forceReprocess?: boolean): Promise<ProcessResponse> {
     const body: Record<string, any> = {
       documentId: documentId,
     };
@@ -98,11 +114,14 @@ export class DocumentService {
       body.use_llm = useLlm;
     }
     
+    // Adiciona force_reprocess apenas se fornecido
+    if (forceReprocess !== undefined) {
+      body.force_reprocess = forceReprocess;
+    }
+    
     const response = await fetch(`${API_BASE_URL}/documents/process`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getHeaders(),
       body: JSON.stringify(body),
     });
 
@@ -115,9 +134,7 @@ export class DocumentService {
 
   static async getDocumentStatus(documentId: string): Promise<DocumentResult> {
     const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getHeaders(),
     });
 
     if (!response.ok) {
@@ -137,9 +154,7 @@ export class DocumentService {
   static async checkDocumentStatus(documentId: string, jobId?: string): Promise<DocumentResult> {
     const response = await fetch(`${API_BASE_URL}/documents/${documentId}/check-status`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getHeaders(),
       // ⭐ NOVO: Passa jobId no body se fornecido (camelCase para backend Java)
       body: jobId ? JSON.stringify({ jobId: jobId }) : undefined,
     });
@@ -185,6 +200,12 @@ export class DocumentService {
 
         if (result.status === 'ERROR') {
           throw new Error(result.error || 'Falha no processamento do documento');
+        }
+
+        // Se o job não foi encontrado e o documento foi resetado, para o polling
+        const jobStatus = result.job_status || result.jobStatus;
+        if (result.status === 'PENDING_REPROCESS' || jobStatus === 'NOT_FOUND') {
+          return result;
         }
 
         // Se ainda está processando, aguarda antes da próxima tentativa

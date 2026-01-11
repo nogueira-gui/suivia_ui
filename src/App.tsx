@@ -13,7 +13,7 @@ function App() {
   const [extractionMethod, setExtractionMethod] = useState<ExtractionMethod>('detect_text');
   const [documentType, setDocumentType] = useState<DocumentType>('');
   const [useLlm, setUseLlm] = useState<boolean>(false);
-  const { progress, result, error, isUploading, uploadDocument, reset } = useDocumentUpload();
+  const { progress, result, error, isUploading, uploadDocument, reprocessDocument, reset } = useDocumentUpload();
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
@@ -23,6 +23,10 @@ function App() {
     if (selectedFile) {
       await uploadDocument(selectedFile, extractionMethod, documentType || undefined, useLlm);
     }
+  };
+
+  const handleReprocess = async (documentId: string, useLlm?: boolean) => {
+    await reprocessDocument(documentId, useLlm);
   };
 
   const handleReset = () => {
@@ -142,7 +146,7 @@ function App() {
             </div>
           )}
 
-          {result && <ResultDisplay result={result} />}
+          {result && <ResultDisplay result={result} onReprocess={handleReprocess} />}
 
           {(result || error) && (
             <button

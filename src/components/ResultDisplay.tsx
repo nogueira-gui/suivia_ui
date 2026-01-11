@@ -1,14 +1,16 @@
-import { FileText, Copy, Download, CheckCircle, Receipt, AlertCircle, Building2, Calendar, DollarSign, Hash, Package } from 'lucide-react';
+import { FileText, Copy, Download, CheckCircle, Receipt, AlertCircle, Building2, Calendar, DollarSign, Hash, Package, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import type { DocumentResult } from '../types/document';
 import { DocumentService } from '../services/documentService';
 
 interface ResultDisplayProps {
   result: DocumentResult;
+  onReprocess?: (documentId: string, useLlm?: boolean) => Promise<void>;
 }
 
-export function ResultDisplay({ result }: ResultDisplayProps) {
+export function ResultDisplay({ result, onReprocess }: ResultDisplayProps) {
   const [copied, setCopied] = useState(false);
+  const [isReprocessing, setIsReprocessing] = useState(false);
 
   const handleCopy = async () => {
     const rawText =
@@ -33,6 +35,21 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
     if (rawText) {
       const filename = `extracted_text_${documentId.slice(0, 8)}.txt`;
       DocumentService.downloadText(rawText, filename);
+    }
+  };
+
+  const handleReprocess = async () => {
+    const documentId = result.document_id || result.documentId;
+    if (!documentId || !onReprocess) return;
+
+    setIsReprocessing(true);
+    try {
+      const useLlm = result.extracted?._use_llm || false;
+      await onReprocess(documentId, useLlm);
+    } catch (error) {
+      console.error('Erro ao reprocessar documento:', error);
+    } finally {
+      setIsReprocessing(false);
     }
   };
 
@@ -203,6 +220,25 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
   const isOrdemServico = documentType === 'ordem_servico';
   const hasError = !!result.extracted?.error;
   const notaFiscalData = result.extracted?.nota_fiscal;
+  
+  // Debug: log para verificar dados
+  if (isNotaFiscal && notaFiscalData) {
+    console.log('Nota Fiscal Data:', notaFiscalData);
+    console.log('Cabeçalho:', notaFiscalData.cabecalho);
+    console.log('Itens:', notaFiscalData.itens);
+  }
+  
+  // Verifica se há dados válidos na nota fiscal (mesmo que parcialmente preenchidos)
+  // Considera válido se tem cabeçalho com pelo menos um campo preenchido (não vazio)
+  const hasNotaFiscalData = notaFiscalData && (
+    (notaFiscalData.cabecalho && Object.keys(notaFiscalData.cabecalho).some(key => {
+      const value = notaFiscalData.cabecalho[key];
+      return value !== null && value !== undefined && value !== '' && 
+             (typeof value !== 'number' || value !== 0) &&
+             (typeof value !== 'object' || (Array.isArray(value) && value.length > 0));
+    })) || 
+    (notaFiscalData.itens && Array.isArray(notaFiscalData.itens) && notaFiscalData.itens.length > 0)
+  );
   // Suporta ambos os formatos: snake_case e camelCase
   const extractionMethod = result.extraction_method || result.extractionMethod;
   const isDetectText = extractionMethod === 'detect_text';
@@ -213,15 +249,60 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
     result.extracted?.rawText;
   const documentId = result.document_id || result.documentId || 'unknown';
 
+  // Verifica se precisa reprocessar (status PENDING_REPROCESS ou job_status NOT_FOUND)
+  const jobStatus = result.job_status || result.jobStatus;
+  const jobMessage = result.job_message || result.jobMessage;
+  const needsReprocess = result.status === 'PENDING_REPROCESS' || jobStatus === 'NOT_FOUND';
+  const isCompleted = result.status === 'COMPLETED';
+
   return (
     <div className="space-y-4">
-      <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-        <div className="flex items-center space-x-3 mb-4">
-          <CheckCircle className="w-6 h-6 text-green-600" />
-          <h3 className="text-lg font-semibold text-green-900">
-            Processamento Concluído!
-          </h3>
+      {needsReprocess ? (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-3">
+              <AlertCircle className="w-6 h-6 text-yellow-600" />
+              <h3 className="text-lg font-semibold text-yellow-900">
+                Job não encontrado - Reprocessamento necessário
+              </h3>
+            </div>
+            {onReprocess && (
+              <button
+                onClick={handleReprocess}
+                disabled={isReprocessing}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+              >
+                <RefreshCw className={`w-4 h-4 ${isReprocessing ? 'animate-spin' : ''}`} />
+                <span>{isReprocessing ? 'Reprocessando...' : 'Reprocessar Agora'}</span>
+              </button>
+            )}
+          </div>
+          <p className="text-sm text-yellow-800">
+            {jobMessage || 'O job não foi encontrado no Textract. O documento foi resetado e pode ser reprocessado.'}
+          </p>
         </div>
+      ) : (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-3">
+              <CheckCircle className="w-6 h-6 text-green-600" />
+              <h3 className="text-lg font-semibold text-green-900">
+                Processamento Concluído!
+              </h3>
+            </div>
+            {onReprocess && isCompleted && (
+              <button
+                onClick={handleReprocess}
+                disabled={isReprocessing}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+              >
+                <RefreshCw className={`w-4 h-4 ${isReprocessing ? 'animate-spin' : ''}`} />
+                <span>{isReprocessing ? 'Reprocessando...' : 'Reprocessar'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
@@ -261,7 +342,6 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
             </>
           )}
         </div>
-      </div>
 
       {/* Se for detect_text, exibe apenas o raw_text */}
       {isDetectText && rawText && (
@@ -305,8 +385,8 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
         </div>
       )}
 
-      {/* Nota Fiscal Data - Structured (apenas se não for detect_text) */}
-      {!isDetectText && isNotaFiscal && notaFiscalData && (
+      {/* Nota Fiscal Data - Structured (renderiza sempre que houver dados) */}
+      {isNotaFiscal && hasNotaFiscalData && (
         <div className="border border-blue-200 bg-blue-50 rounded-lg overflow-hidden">
           <div className="bg-blue-100 border-b border-blue-200 p-4 flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -321,52 +401,72 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
           </div>
 
           <div className="p-6 bg-white space-y-6">
-            {/* Cabeçalho */}
-            {notaFiscalData.nota_fiscal?.cabecalho && (
+            {/* Cabeçalho - renderiza mesmo se alguns campos estiverem vazios */}
+            {(notaFiscalData.cabecalho && Object.keys(notaFiscalData.cabecalho).length > 0) && (
               <div className="space-y-4">
                 <h5 className="font-semibold text-gray-900 border-b pb-2">Informações da Nota</h5>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {notaFiscalData.nota_fiscal.cabecalho.numero && (
+                  {notaFiscalData.cabecalho.numero && (
                     <div className="flex items-start space-x-3">
                       <Hash className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
                       <div>
                         <p className="text-xs text-gray-500">Número da Nota</p>
-                        <p className="text-sm font-medium text-gray-900">{notaFiscalData.nota_fiscal.cabecalho.numero}</p>
-                        {notaFiscalData.nota_fiscal.cabecalho.serie && (
-                          <p className="text-xs text-gray-500">Série: {notaFiscalData.nota_fiscal.cabecalho.serie}</p>
+                        <p className="text-sm font-medium text-gray-900">{notaFiscalData.cabecalho.numero}</p>
+                        {notaFiscalData.cabecalho.serie && (
+                          <p className="text-xs text-gray-500">Série: {notaFiscalData.cabecalho.serie}</p>
                         )}
                       </div>
                     </div>
                   )}
 
-                  {notaFiscalData.nota_fiscal.cabecalho.data_emissao && (
+                  {notaFiscalData.cabecalho.data_emissao && (
                     <div className="flex items-start space-x-3">
                       <Calendar className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
                       <div>
                         <p className="text-xs text-gray-500">Data de Emissão</p>
-                        <p className="text-sm font-medium text-gray-900">{formatDate(notaFiscalData.nota_fiscal.cabecalho.data_emissao)}</p>
+                        <p className="text-sm font-medium text-gray-900">{formatDate(notaFiscalData.cabecalho.data_emissao)}</p>
                       </div>
                     </div>
                   )}
 
-                  {notaFiscalData.nota_fiscal.cabecalho.valor_total && (
+                  {notaFiscalData.cabecalho.valor_total && (
                     <div className="flex items-start space-x-3">
                       <DollarSign className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
                       <div>
                         <p className="text-xs text-gray-500">Valor Total</p>
-                        <p className="text-lg font-semibold text-gray-900">{formatCurrency(notaFiscalData.nota_fiscal.cabecalho.valor_total)}</p>
+                        <p className="text-lg font-semibold text-gray-900">{formatCurrency(notaFiscalData.cabecalho.valor_total)}</p>
                       </div>
                     </div>
                   )}
 
-                  {notaFiscalData.nota_fiscal.cabecalho.tipo_nota && (
+                  {notaFiscalData.cabecalho.valor_produtos !== undefined && notaFiscalData.cabecalho.valor_produtos > 0 && (
+                    <div className="flex items-start space-x-3">
+                      <Package className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs text-gray-500">Valor dos Produtos</p>
+                        <p className="text-sm font-medium text-gray-900">{formatCurrency(notaFiscalData.cabecalho.valor_produtos)}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {notaFiscalData.cabecalho.valor_icms !== undefined && notaFiscalData.cabecalho.valor_icms > 0 && (
+                    <div className="flex items-start space-x-3">
+                      <Receipt className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs text-gray-500">Valor do ICMS</p>
+                        <p className="text-sm font-medium text-gray-900">{formatCurrency(notaFiscalData.cabecalho.valor_icms)}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {notaFiscalData.cabecalho.tipo_nota && (
                     <div className="flex items-start space-x-3">
                       <Receipt className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
                       <div>
                         <p className="text-xs text-gray-500">Tipo</p>
                         <p className="text-sm font-medium text-gray-900">
-                          {notaFiscalData.nota_fiscal.cabecalho.tipo_nota === 'ENTRADA' ? 'Entrada' : 'Saída'}
+                          {notaFiscalData.cabecalho.tipo_nota === 'ENTRADA' ? 'Entrada' : 'Saída'}
                         </p>
                       </div>
                     </div>
@@ -374,32 +474,38 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
                 </div>
 
                 {/* CNPJs */}
-                {(notaFiscalData.nota_fiscal.cabecalho.cnpj_emitente || notaFiscalData.nota_fiscal.cabecalho.cnpj_destinatario) && (
+                {(notaFiscalData.cabecalho.cnpj_emitente || notaFiscalData.cabecalho.cnpj_destinatario) && (
                   <div className="pt-4 border-t space-y-3">
                     <h6 className="font-medium text-gray-700 text-sm">Emitente e Destinatário</h6>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {notaFiscalData.nota_fiscal.cabecalho.cnpj_emitente && (
+                      {notaFiscalData.cabecalho.cnpj_emitente && (
                         <div className="flex items-start space-x-3">
                           <Building2 className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
                           <div className="flex-1">
                             <p className="text-xs text-gray-500">Emitente</p>
                             <p className="text-sm font-medium text-gray-900">
-                              {notaFiscalData.nota_fiscal.cabecalho.razao_social_emitente || 'N/A'}
+                              {notaFiscalData.cabecalho.razao_social_emitente || 'N/A'}
                             </p>
-                            <p className="text-xs text-gray-600 font-mono">{formatCNPJ(notaFiscalData.nota_fiscal.cabecalho.cnpj_emitente)}</p>
+                            <p className="text-xs text-gray-600 font-mono">{formatCNPJ(notaFiscalData.cabecalho.cnpj_emitente)}</p>
                           </div>
                         </div>
                       )}
 
-                      {notaFiscalData.nota_fiscal.cabecalho.cnpj_destinatario && notaFiscalData.nota_fiscal.cabecalho.cnpj_destinatario !== '00000000000000' && (
+                      {notaFiscalData.cabecalho.cnpj_destinatario && 
+                       notaFiscalData.cabecalho.cnpj_destinatario !== '00000000000000' &&
+                       notaFiscalData.cabecalho.cnpj_destinatario.length >= 11 && (
                         <div className="flex items-start space-x-3">
                           <Building2 className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
                           <div className="flex-1">
                             <p className="text-xs text-gray-500">Destinatário</p>
                             <p className="text-sm font-medium text-gray-900">
-                              {notaFiscalData.nota_fiscal.cabecalho.razao_social_destinatario || 'N/A'}
+                              {notaFiscalData.cabecalho.razao_social_destinatario || 'N/A'}
                             </p>
-                            <p className="text-xs text-gray-600 font-mono">{formatCNPJ(notaFiscalData.nota_fiscal.cabecalho.cnpj_destinatario)}</p>
+                            <p className="text-xs text-gray-600 font-mono">
+                              {notaFiscalData.cabecalho.cnpj_destinatario.length === 11
+                                ? notaFiscalData.cabecalho.cnpj_destinatario.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
+                                : formatCNPJ(notaFiscalData.cabecalho.cnpj_destinatario)}
+                            </p>
                           </div>
                         </div>
                       )}
@@ -408,12 +514,12 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
                 )}
 
                 {/* Chave de Acesso */}
-                {notaFiscalData.nota_fiscal.cabecalho.chave_acesso && 
-                 notaFiscalData.nota_fiscal.cabecalho.chave_acesso !== '00000000000000000000000000000000000000000000' && (
+                {notaFiscalData.cabecalho.chave_acesso && 
+                 notaFiscalData.cabecalho.chave_acesso !== '00000000000000000000000000000000000000000000' && (
                   <div className="pt-4 border-t">
                     <p className="text-xs text-gray-500 mb-1">Chave de Acesso</p>
                     <p className="text-xs font-mono text-gray-700 break-all">
-                      {notaFiscalData.nota_fiscal.cabecalho.chave_acesso.match(/.{1,4}/g)?.join(' ') || notaFiscalData.nota_fiscal.cabecalho.chave_acesso}
+                      {notaFiscalData.cabecalho.chave_acesso.match(/.{1,4}/g)?.join(' ') || notaFiscalData.cabecalho.chave_acesso}
                     </p>
                   </div>
                 )}
@@ -421,14 +527,14 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
             )}
 
             {/* Itens */}
-            {notaFiscalData.nota_fiscal?.itens && notaFiscalData.nota_fiscal.itens.length > 0 && (
+            {notaFiscalData.itens && notaFiscalData.itens.length > 0 && (
               <div className="pt-4 border-t">
                 <div className="flex items-center space-x-2 mb-4">
                   <Package className="w-5 h-5 text-gray-400" />
-                  <h5 className="font-semibold text-gray-900">Itens da Nota ({notaFiscalData.nota_fiscal.itens.length})</h5>
+                  <h5 className="font-semibold text-gray-900">Itens da Nota ({notaFiscalData.itens.length})</h5>
                 </div>
                 <div className="space-y-3">
-                  {notaFiscalData.nota_fiscal.itens.map((item, idx) => (
+                  {notaFiscalData.itens.map((item, idx) => (
                     <div key={idx} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                       <div className="flex justify-between items-start mb-2">
                         <div className="flex-1">
@@ -444,9 +550,20 @@ export function ResultDisplay({ result }: ResultDisplayProps) {
                           )}
                         </div>
                       </div>
-                      {item.codigo_produto && (
-                        <p className="text-xs text-gray-500 font-mono">Código: {item.codigo_produto}</p>
-                      )}
+                      <div className="mt-2 space-y-1">
+                        {item.codigo_produto && (
+                          <p className="text-xs text-gray-500 font-mono">Código: {item.codigo_produto}</p>
+                        )}
+                        {item.unidade && (
+                          <p className="text-xs text-gray-500">Unidade: {item.unidade}</p>
+                        )}
+                        {item.ncm && (
+                          <p className="text-xs text-gray-500">NCM: {item.ncm}</p>
+                        )}
+                        {item.cfop && (
+                          <p className="text-xs text-gray-500">CFOP: {item.cfop}</p>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
