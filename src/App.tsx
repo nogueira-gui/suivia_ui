@@ -1,26 +1,48 @@
 import { useState } from 'react';
-import { FileText, RefreshCw, AlertCircle } from 'lucide-react';
+import { FileText, RefreshCw, AlertCircle, Upload } from 'lucide-react';
 import { FileUploader } from './components/FileUploader';
 import { ProgressIndicator } from './components/ProgressIndicator';
 import { ResultDisplay } from './components/ResultDisplay';
+import { BatchStatusDisplay } from './components/BatchStatusDisplay';
 import { useDocumentUpload } from './hooks/useDocumentUpload';
+import { useBatchUpload } from './hooks/useBatchUpload';
 
 type ExtractionMethod = 'detect_text' | 'analyze_document' | 'analyze_expense';
 type DocumentType = 'nota_fiscal' | 'recibo' | 'contrato' | 'boleto' | 'ordem_servico' | 'generic' | '';
 
 function App() {
+  const [mode, setMode] = useState<'single' | 'batch'>('single');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [extractionMethod, setExtractionMethod] = useState<ExtractionMethod>('detect_text');
   const [documentType, setDocumentType] = useState<DocumentType>('');
   const [useLlm, setUseLlm] = useState<boolean>(false);
+  
+  // Hooks para upload único e batch
   const { progress, result, error, isUploading, uploadDocument, reprocessDocument, reset } = useDocumentUpload();
+  const { 
+    progress: batchProgress, 
+    result: batchResult, 
+    error: batchError, 
+    isUploading: isBatchUploading, 
+    uploadBatch, 
+    reset: resetBatch 
+  } = useBatchUpload();
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
+    setSelectedFiles([file]);
+  };
+
+  const handleFilesSelect = (files: File[]) => {
+    setSelectedFiles(files);
+    setSelectedFile(files.length === 1 ? files[0] : null);
   };
 
   const handleUpload = async () => {
-    if (selectedFile) {
+    if (mode === 'batch' && selectedFiles.length > 0) {
+      await uploadBatch(selectedFiles, extractionMethod, documentType || undefined);
+    } else if (selectedFile) {
       await uploadDocument(selectedFile, extractionMethod, documentType || undefined, useLlm);
     }
   };
@@ -31,10 +53,27 @@ function App() {
 
   const handleReset = () => {
     setSelectedFile(null);
+    setSelectedFiles([]);
     setDocumentType('');
     setUseLlm(false);
-    reset();
+    if (mode === 'batch') {
+      resetBatch();
+    } else {
+      reset();
+    }
   };
+
+  const handleModeChange = (newMode: 'single' | 'batch') => {
+    setMode(newMode);
+    setSelectedFile(null);
+    setSelectedFiles([]);
+    reset();
+    resetBatch();
+  };
+
+  const isProcessing = mode === 'batch' ? isBatchUploading : isUploading;
+  const currentProgress = mode === 'batch' ? batchProgress : progress;
+  const currentError = mode === 'batch' ? batchError : error;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -50,7 +89,33 @@ function App() {
         </div>
 
         <div className="bg-white rounded-xl shadow-lg p-8 space-y-6">
-          {!result && !error && (
+          {/* Toggle entre modo único e batch */}
+          <div className="flex items-center justify-center space-x-4 p-4 bg-gray-50 rounded-lg">
+            <button
+              onClick={() => handleModeChange('single')}
+              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                mode === 'single'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-100'
+              }`}
+              disabled={isProcessing}
+            >
+              Upload Único
+            </button>
+            <button
+              onClick={() => handleModeChange('batch')}
+              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                mode === 'batch'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-100'
+              }`}
+              disabled={isProcessing}
+            >
+              Upload em Lote
+            </button>
+          </div>
+
+          {!result && !batchResult && !error && !batchError && (
             <>
               <div className="space-y-2">
                 <label htmlFor="document-type" className="block text-sm font-medium text-gray-700">
@@ -60,7 +125,7 @@ function App() {
                   id="document-type"
                   value={documentType}
                   onChange={(e) => setDocumentType(e.target.value as DocumentType)}
-                  disabled={isUploading}
+                  disabled={isProcessing}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <option value="">Selecione um tipo (opcional)</option>
@@ -84,7 +149,7 @@ function App() {
                   id="extraction-method"
                   value={extractionMethod}
                   onChange={(e) => setExtractionMethod(e.target.value as ExtractionMethod)}
-                  disabled={isUploading}
+                  disabled={isProcessing}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <option value="detect_text">Detect Text (Mais rápido, texto simples)</option>
@@ -102,7 +167,7 @@ function App() {
                   id="use-llm"
                   checked={useLlm}
                   onChange={(e) => setUseLlm(e.target.checked)}
-                  disabled={isUploading}
+                  disabled={isProcessing}
                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50"
                 />
                 <label htmlFor="use-llm" className="flex-1 text-sm font-medium text-gray-700 cursor-pointer">
@@ -115,24 +180,31 @@ function App() {
 
               <FileUploader
                 onFileSelect={handleFileSelect}
-                disabled={isUploading}
+                onFilesSelect={handleFilesSelect}
+                disabled={isProcessing}
+                multiple={mode === 'batch'}
               />
 
-              {selectedFile && !isUploading && (
+              {((mode === 'single' && selectedFile) || (mode === 'batch' && selectedFiles.length > 0)) && !isProcessing && (
                 <button
                   onClick={handleUpload}
                   className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center space-x-2"
                 >
-                  <FileText className="w-5 h-5" />
-                  <span>Fazer Upload e Processar</span>
+                  <Upload className="w-5 h-5" />
+                  <span>
+                    {mode === 'batch' 
+                      ? `Fazer Upload e Processar ${selectedFiles.length} Arquivo(s)`
+                      : 'Fazer Upload e Processar'
+                    }
+                  </span>
                 </button>
               )}
             </>
           )}
 
-          <ProgressIndicator progress={progress} />
+          <ProgressIndicator progress={currentProgress} />
 
-          {error && (
+          {currentError && (
             <div className="border border-red-200 bg-red-50 rounded-lg p-6">
               <div className="flex items-start space-x-3">
                 <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
@@ -140,15 +212,16 @@ function App() {
                   <h3 className="text-lg font-semibold text-red-900 mb-2">
                     Erro no Processamento
                   </h3>
-                  <p className="text-sm text-red-800">{error}</p>
+                  <p className="text-sm text-red-800">{currentError}</p>
                 </div>
               </div>
             </div>
           )}
 
-          {result && <ResultDisplay result={result} onReprocess={handleReprocess} />}
+          {result && mode === 'single' && <ResultDisplay result={result} onReprocess={handleReprocess} />}
+          {batchResult && mode === 'batch' && <BatchStatusDisplay result={batchResult} />}
 
-          {(result || error) && (
+          {(result || batchResult || error || batchError) && (
             <button
               onClick={handleReset}
               className="w-full bg-gray-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-gray-700 transition-colors flex items-center justify-center space-x-2"

@@ -3,11 +3,14 @@ import { Upload, File, AlertCircle } from 'lucide-react';
 
 interface FileUploaderProps {
   onFileSelect: (file: File) => void;
+  onFilesSelect?: (files: File[]) => void;
   disabled?: boolean;
+  multiple?: boolean;
 }
 
-export function FileUploader({ onFileSelect, disabled }: FileUploaderProps) {
+export function FileUploader({ onFileSelect, onFilesSelect, disabled, multiple = false }: FileUploaderProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [validationError, setValidationError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -47,19 +50,50 @@ export function FileUploader({ onFileSelect, disabled }: FileUploaderProps) {
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
-    const error = validateFile(file);
-    if (error) {
-      setValidationError(error);
-      setSelectedFile(null);
-      return;
+    if (multiple) {
+      // Modo múltiplos arquivos
+      const validFiles: File[] = [];
+      const errors: string[] = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const error = validateFile(file);
+        if (error) {
+          errors.push(`${file.name}: ${error}`);
+        } else {
+          validFiles.push(file);
+        }
+      }
+
+      if (errors.length > 0) {
+        setValidationError(errors.join('; '));
+      } else {
+        setValidationError(null);
+      }
+
+      setSelectedFiles(validFiles);
+      if (onFilesSelect && validFiles.length > 0) {
+        onFilesSelect(validFiles);
+      }
+    } else {
+      // Modo arquivo único
+      const file = files[0];
+      const error = validateFile(file);
+      if (error) {
+        setValidationError(error);
+        setSelectedFile(null);
+        setSelectedFiles([]);
+        return;
+      }
+
+      setValidationError(null);
+      setSelectedFile(file);
+      setSelectedFiles([file]);
+      onFileSelect(file);
     }
-
-    setValidationError(null);
-    setSelectedFile(file);
-    onFileSelect(file);
   };
 
   const handleClick = () => {
@@ -75,6 +109,7 @@ export function FileUploader({ onFileSelect, disabled }: FileUploaderProps) {
         onChange={handleFileChange}
         className="hidden"
         disabled={disabled}
+        multiple={multiple}
       />
 
       <button
@@ -86,26 +121,38 @@ export function FileUploader({ onFileSelect, disabled }: FileUploaderProps) {
           <Upload className="w-12 h-12 text-gray-400" />
           <div className="text-center">
             <p className="text-sm font-medium text-gray-700">
-              Clique para selecionar um arquivo (PDF, JPG, JPEG ou PNG)
+              {multiple 
+                ? 'Clique para selecionar arquivos (PDF, JPG, JPEG ou PNG)'
+                : 'Clique para selecionar um arquivo (PDF, JPG, JPEG ou PNG)'
+              }
             </p>
             <p className="text-xs text-gray-500 mt-1">
-              Tamanho máximo: 100MB
+              Tamanho máximo: 100MB por arquivo
             </p>
           </div>
         </div>
       </button>
 
-      {selectedFile && (
-        <div className="flex items-center space-x-3 p-4 bg-green-50 border border-green-200 rounded-lg">
-          <File className="w-5 h-5 text-green-600 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-green-900 truncate">
-              {selectedFile.name}
+      {selectedFiles.length > 0 && (
+        <div className="space-y-2">
+          {selectedFiles.map((file, index) => (
+            <div key={index} className="flex items-center space-x-3 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <File className="w-5 h-5 text-green-600 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-green-900 truncate">
+                  {file.name}
+                </p>
+                <p className="text-xs text-green-700">
+                  {formatFileSize(file.size)}
+                </p>
+              </div>
+            </div>
+          ))}
+          {selectedFiles.length > 1 && (
+            <p className="text-xs text-gray-600 text-center">
+              {selectedFiles.length} arquivo(s) selecionado(s)
             </p>
-            <p className="text-xs text-green-700">
-              {formatFileSize(selectedFile.size)}
-            </p>
-          </div>
+          )}
         </div>
       )}
 

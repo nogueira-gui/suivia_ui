@@ -120,3 +120,48 @@ export interface UploadProgress {
   progress: number;
   elapsedTime: number;
 }
+
+// ============================================================================
+// Batch Processing Types
+// ============================================================================
+
+export type BatchStatus = 'PROCESSING' | 'COMPLETED' | 'FAILED';
+
+export interface BatchDocument {
+  document_id: string;
+  status: DocumentStatus;
+  job_id?: string;
+  error?: string;
+  source_s3_key?: string;
+  created_at?: string;
+  extracted?: DocumentResult['extracted'];
+  raw_text?: string;
+}
+
+export interface BatchStatistics {
+  total: number;
+  completed: number;
+  processing: number;
+  error: number;
+  pending: number;
+}
+
+export interface BatchResponse {
+  batch_id: string;
+  total_documents: number;
+  documents: Array<{
+    document_id: string;
+    status: DocumentStatus;
+    job_id?: string;
+    error?: string;
+  }>;
+  message?: string;
+}
+
+export interface BatchStatusResponse {
+  batch_id: string;
+  status: BatchStatus;
+  created_at: string;
+  statistics: BatchStatistics;
+  documents: BatchDocument[];
+}
