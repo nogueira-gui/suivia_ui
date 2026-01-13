@@ -26,6 +26,8 @@ interface BatchResult {
     document_id: string;
     status: DocumentStatus;
     error?: string;
+    extracted?: any;
+    raw_text?: string;
   }>;
 }
 
@@ -159,6 +161,19 @@ export function useBatchUpload() {
       // Passo 4: Resultado final
       updateProgress('completed', 'Processamento em lote concluído!', 100);
       
+      // Debug: log para verificar dados recebidos do backend
+      console.log('Batch status recebido:', {
+        batch_id: finalStatus.batch_id,
+        status: finalStatus.status,
+        documents: finalStatus.documents.map(doc => ({
+          document_id: doc.document_id,
+          status: doc.status,
+          hasExtracted: !!doc.extracted,
+          hasRawText: !!doc.raw_text,
+          extractedKeys: doc.extracted ? Object.keys(doc.extracted) : null
+        }))
+      });
+      
       setResult({
         batch_id: finalStatus.batch_id,
         status: finalStatus.status,
@@ -167,6 +182,8 @@ export function useBatchUpload() {
           document_id: doc.document_id,
           status: doc.status,
           error: doc.error,
+          extracted: doc.extracted,
+          raw_text: doc.raw_text,
         })),
       });
 
