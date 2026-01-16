@@ -1,6 +1,7 @@
 import type { BatchResponse, BatchStatusResponse } from '../types/document';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://hjutldvak8.execute-api.us-east-1.amazonaws.com/dev';
+// URL do ECS (ALB) para batch processing - se não definida, usa API Gateway
+const ECS_BASE_URL = import.meta.env.VITE_ECS_BASE_URL || import.meta.env.VITE_API_BASE_URL || 'https://hjutldvak8.execute-api.us-east-1.amazonaws.com/dev';
 const API_KEY = import.meta.env.VITE_API_KEY || '';
 
 /**
@@ -27,7 +28,7 @@ export class BatchService {
    * @param documentIds - Array de IDs de documentos já enviados para o S3
    */
   static async createBatch(documentIds: string[]): Promise<BatchResponse> {
-    const response = await fetch(`${API_BASE_URL}/batch`, {
+    const response = await fetch(`${ECS_BASE_URL}/batch`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({
@@ -49,7 +50,7 @@ export class BatchService {
    * @param batchId - ID do lote
    */
   static async getBatchStatus(batchId: string): Promise<BatchStatusResponse> {
-    const response = await fetch(`${API_BASE_URL}/batch/${batchId}`, {
+    const response = await fetch(`${ECS_BASE_URL}/batch/${batchId}`, {
       method: 'GET',
       headers: getHeaders(),
     });

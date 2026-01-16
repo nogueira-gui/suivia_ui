@@ -134,18 +134,16 @@ export function BatchStatusDisplay({ result }: BatchStatusDisplayProps) {
         <div className="space-y-2 max-h-96 overflow-y-auto">
           {documents.map((doc, index) => {
             const expanded = isExpanded(doc.document_id);
-            // Verifica se tem detalhes: status COMPLETED e (extracted ou raw_text)
-            const hasDetails = doc.status === 'COMPLETED' && (doc.extracted || doc.raw_text);
-            
-            // Debug: log para verificar dados recebidos
-            if (doc.status === 'COMPLETED' && !hasDetails) {
-              console.log(`Documento ${doc.document_id} sem detalhes:`, {
-                status: doc.status,
-                hasExtracted: !!doc.extracted,
-                hasRawText: !!doc.raw_text,
-                extracted: doc.extracted
-              });
-            }
+            // Verifica se há detalhes para exibir (extracted ou raw_text)
+            const hasExtracted = doc.extracted && (
+              (typeof doc.extracted === 'object' && Object.keys(doc.extracted).length > 0) ||
+              doc.extracted.raw_text || 
+              doc.extracted.rawText ||
+              doc.extracted.nota_fiscal ||
+              doc.extracted.raw_expense_data
+            );
+            const hasRawText = doc.raw_text && doc.raw_text.trim().length > 0;
+            const hasDetails = doc.status === 'COMPLETED' && (hasExtracted || hasRawText);
             
             return (
               <div key={doc.document_id} className="space-y-2">

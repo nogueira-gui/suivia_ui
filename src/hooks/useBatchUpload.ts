@@ -28,6 +28,9 @@ interface BatchResult {
     error?: string;
     extracted?: any;
     raw_text?: string;
+    job_id?: string;
+    source_s3_key?: string;
+    created_at?: string;
   }>;
 }
 
@@ -161,19 +164,6 @@ export function useBatchUpload() {
       // Passo 4: Resultado final
       updateProgress('completed', 'Processamento em lote concluído!', 100);
       
-      // Debug: log para verificar dados recebidos do backend
-      console.log('Batch status recebido:', {
-        batch_id: finalStatus.batch_id,
-        status: finalStatus.status,
-        documents: finalStatus.documents.map(doc => ({
-          document_id: doc.document_id,
-          status: doc.status,
-          hasExtracted: !!doc.extracted,
-          hasRawText: !!doc.raw_text,
-          extractedKeys: doc.extracted ? Object.keys(doc.extracted) : null
-        }))
-      });
-      
       setResult({
         batch_id: finalStatus.batch_id,
         status: finalStatus.status,
@@ -184,6 +174,9 @@ export function useBatchUpload() {
           error: doc.error,
           extracted: doc.extracted,
           raw_text: doc.raw_text,
+          job_id: doc.job_id,
+          source_s3_key: doc.source_s3_key,
+          created_at: doc.created_at,
         })),
       });
 
