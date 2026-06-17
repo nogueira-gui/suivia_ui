@@ -77,6 +77,7 @@ function App() {
   const [selectedDocument, setSelectedDocument] = useState<DocumentResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [batchLoadError, setBatchLoadError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<DocumentStatus | 'ALL'>('ALL');
   const [typeFilter, setTypeFilter] = useState<DocumentType>('');
   const [query, setQuery] = useState('');
@@ -110,6 +111,7 @@ function App() {
   const fetchOperationalData = useCallback(async () => {
     setIsLoading(true);
     setLoadError(null);
+    setBatchLoadError(null);
     try {
       const [documentResponse, reviewResponse, batchResponse] = await Promise.allSettled([
         DocumentService.listDocuments({ status: statusFilter, limit: 80 }),
@@ -127,9 +129,11 @@ function App() {
 
       if (batchResponse.status === 'fulfilled') {
         setBatches(batchResponse.value.batches || []);
+      } else {
+        setBatchLoadError(batchResponse.reason instanceof Error ? batchResponse.reason.message : 'Falha ao carregar lotes recentes');
       }
 
-      const rejected = [documentResponse, reviewResponse, batchResponse].find((response) => response.status === 'rejected');
+      const rejected = [documentResponse, reviewResponse].find((response) => response.status === 'rejected');
       if (rejected && rejected.status === 'rejected') {
         setLoadError(rejected.reason instanceof Error ? rejected.reason.message : 'Falha ao carregar dados operacionais');
       }
@@ -428,6 +432,11 @@ function App() {
                 <h2 className="text-base font-semibold">Lotes recentes</h2>
                 <p className="text-sm text-slate-600">Acompanhamento de processamento em lote e exportacao futura.</p>
               </div>
+              {batchLoadError && (
+                <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  Listagem de lotes indisponivel na API dev: {batchLoadError}
+                </div>
+              )}
               <BatchList batches={batches} />
             </div>
           )}
