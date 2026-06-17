@@ -18,6 +18,7 @@ Turn the Suivia frontend into an operational console for uploaded documents, bat
 - Document list with filters for status, document type and text search.
 - Upload flow with document type and Textract extraction method.
 - Batch upload and batch status view.
+- Batch detail view backed by `GET /batch/{batch_id}`, with statistics and document-level navigation.
 - Document detail with structured fields, raw text and JSON.
 - Review queue for `LOW_CONFIDENCE` and `NEEDS_REVIEW`.
 - Reprocess action with `detect_text`, `analyze_document` or `analyze_expense`.
@@ -70,5 +71,7 @@ Acceptance:
 - The first screen exposes document management, not only upload.
 - Status/review language is visible on load.
 - Textract extraction controls are visible.
+- Selecting a listed batch opens real batch status details and exposes its documents.
+- Batch document rows can navigate back to the document detail workflow.
 - The app loads without direct browser calls to AWS service URLs outside the configured API base URL.
 - Build, lint and Playwright smoke pass locally.

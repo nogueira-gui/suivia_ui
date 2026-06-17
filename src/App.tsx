@@ -24,7 +24,7 @@ import { useBatchUpload } from './hooks/useBatchUpload';
 import { useDocumentUpload } from './hooks/useDocumentUpload';
 import { BatchService } from './services/batchService';
 import { DocumentService } from './services/documentService';
-import type { BatchListItem, DocumentResult, DocumentStatus } from './types/document';
+import type { BatchDocument, BatchListItem, BatchStatusResponse, DocumentResult, DocumentStatus } from './types/document';
 
 type ExtractionMethod = 'detect_text' | 'analyze_document' | 'analyze_expense';
 type DocumentType =
@@ -74,10 +74,13 @@ function App() {
   const [documents, setDocuments] = useState<DocumentResult[]>([]);
   const [reviewQueue, setReviewQueue] = useState<DocumentResult[]>([]);
   const [batches, setBatches] = useState<BatchListItem[]>([]);
+  const [selectedBatch, setSelectedBatch] = useState<BatchStatusResponse | null>(null);
   const [selectedDocument, setSelectedDocument] = useState<DocumentResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isBatchDetailLoading, setIsBatchDetailLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [batchLoadError, setBatchLoadError] = useState<string | null>(null);
+  const [batchDetailError, setBatchDetailError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<DocumentStatus | 'ALL'>('ALL');
   const [typeFilter, setTypeFilter] = useState<DocumentType>('');
   const [query, setQuery] = useState('');
@@ -255,6 +258,19 @@ function App() {
       setActionMessage('Documento enviado para reprocessamento');
     } catch (err) {
       setActionMessage(err instanceof Error ? err.message : 'Falha ao reprocessar documento');
+    }
+  };
+
+  const handleSelectBatch = async (batchId: string) => {
+    setBatchDetailError(null);
+    setIsBatchDetailLoading(true);
+    try {
+      const detail = await BatchService.getBatchStatus(batchId);
+      setSelectedBatch(detail);
+    } catch (err) {
+      setBatchDetailError(err instanceof Error ? err.message : 'Nao foi possivel abrir o lote');
+    } finally {
+      setIsBatchDetailLoading(false);
     }
   };
 
@@ -437,7 +453,26 @@ function App() {
                   Listagem de lotes indisponivel na API dev: {batchLoadError}
                 </div>
               )}
-              <BatchList batches={batches} />
+              <BatchList
+                batches={batches}
+                selectedBatchId={selectedBatch?.batch_id || ''}
+                onSelectBatch={(batchId) => void handleSelectBatch(batchId)}
+              />
+              <BatchDetail
+                batch={selectedBatch}
+                isLoading={isBatchDetailLoading}
+                error={batchDetailError}
+                onOpenDocument={(documentId) => {
+                  const document = documents.find((item) => getDocumentId(item) === documentId);
+                  if (document) {
+                    void handleSelectDocument(document);
+                    setView('documents');
+                    return;
+                  }
+                  setQuery(documentId);
+                  setView('documents');
+                }}
+              />
             </div>
           )}
         </section>
@@ -867,26 +902,146 @@ function UploadPanel({
   );
 }
 
-function BatchList({ batches }: { batches: BatchListItem[] }) {
+function BatchList({
+  batches,
+  selectedBatchId,
+  onSelectBatch,
+}: {
+  batches: BatchListItem[];
+  selectedBatchId: string;
+  onSelectBatch: (batchId: string) => void;
+}) {
   if (batches.length === 0) {
     return <div className="p-8 text-center text-sm text-slate-600">Nenhum lote recente encontrado.</div>;
   }
 
   return (
     <div className="divide-y divide-slate-100">
-      {batches.map((batch) => (
-        <div key={batch.batch_id} className="grid gap-3 px-4 py-3 text-sm lg:grid-cols-[minmax(0,1fr)_140px_120px_160px]">
+      {batches.map((batch) => {
+        const selected = selectedBatchId === batch.batch_id;
+        return (
+          <button
+            key={batch.batch_id}
+            type="button"
+            onClick={() => onSelectBatch(batch.batch_id)}
+            className={`grid w-full gap-3 px-4 py-3 text-left text-sm hover:bg-slate-50 lg:grid-cols-[minmax(0,1fr)_140px_120px_160px_auto] ${
+              selected ? 'bg-sky-50' : 'bg-white'
+            }`}
+          >
+            <div className="min-w-0">
+              <p className="truncate font-mono text-xs text-slate-900">{batch.batch_id}</p>
+              <p className="mt-1 text-xs text-slate-500">{formatDate(batch.created_at)}</p>
+            </div>
+            <StatusBadge status={batch.status as DocumentStatus} />
+            <p className="text-slate-700">{batch.total_documents ?? 0} documentos</p>
+            <p className="text-slate-600">
+              {batch.completed_documents ?? 0} ok / {batch.error_documents ?? 0} erro
+            </p>
+            <span className="text-xs font-medium text-sky-700">Detalhe</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function BatchDetail({
+  batch,
+  isLoading,
+  error,
+  onOpenDocument,
+}: {
+  batch: BatchStatusResponse | null;
+  isLoading: boolean;
+  error: string | null;
+  onOpenDocument: (documentId: string) => void;
+}) {
+  if (isLoading) {
+    return <div className="border-t border-slate-200 p-5 text-sm text-slate-600">Carregando detalhe do lote...</div>;
+  }
+
+  if (error) {
+    return <div className="border-t border-red-200 bg-red-50 p-5 text-sm text-red-800">{error}</div>;
+  }
+
+  if (!batch) {
+    return <div className="border-t border-slate-200 p-5 text-sm text-slate-600">Selecione um lote para ver documentos e estatisticas.</div>;
+  }
+
+  const stats = batch.statistics;
+
+  return (
+    <div className="border-t border-slate-200">
+      <div className="grid gap-4 p-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <div className="space-y-4">
           <div>
-            <p className="font-mono text-xs text-slate-900">{batch.batch_id}</p>
-            <p className="mt-1 text-xs text-slate-500">{formatDate(batch.created_at)}</p>
+            <h3 className="text-sm font-semibold text-slate-900">Detalhe do lote</h3>
+            <p className="mt-1 break-all font-mono text-xs text-slate-500">{batch.batch_id}</p>
           </div>
-          <StatusBadge status={batch.status as DocumentStatus} />
-          <p className="text-slate-700">{batch.total_documents ?? 0} documentos</p>
-          <p className="text-slate-600">
-            {batch.completed_documents ?? 0} ok / {batch.error_documents ?? 0} erro
-          </p>
+          <dl className="grid grid-cols-2 gap-3 text-sm">
+            <Meta label="Status" value={batch.status} />
+            <Meta label="Criado" value={formatDate(batch.created_at)} />
+            <Meta label="Total" value={String(stats.total ?? batch.documents.length)} />
+            <Meta label="Concluidos" value={String(stats.completed ?? 0)} />
+            <Meta label="Revisao" value={String((stats.low_confidence ?? 0) + (stats.needs_review ?? 0))} />
+            <Meta label="Erro" value={String(stats.error ?? 0)} />
+          </dl>
         </div>
-      ))}
+        <BatchDocumentTable documents={batch.documents} onOpenDocument={onOpenDocument} />
+      </div>
+    </div>
+  );
+}
+
+function BatchDocumentTable({
+  documents,
+  onOpenDocument,
+}: {
+  documents: BatchDocument[];
+  onOpenDocument: (documentId: string) => void;
+}) {
+  if (documents.length === 0) {
+    return <div className="rounded-lg border border-slate-200 p-5 text-sm text-slate-600">Nenhum documento vinculado ao lote.</div>;
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <table className="min-w-full divide-y divide-slate-200 text-sm">
+        <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+          <tr>
+            <th className="px-3 py-2 font-medium">Documento</th>
+            <th className="px-3 py-2 font-medium">Status</th>
+            <th className="px-3 py-2 font-medium">Origem</th>
+            <th className="px-3 py-2 font-medium">Acao</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 bg-white">
+          {documents.map((document) => (
+            <tr key={document.document_id}>
+              <td className="max-w-[220px] px-3 py-2">
+                <p className="truncate font-mono text-xs text-slate-900">{document.document_id}</p>
+                <p className="mt-1 text-xs text-slate-500">{formatDate(document.created_at)}</p>
+              </td>
+              <td className="px-3 py-2">
+                <StatusBadge status={document.status} />
+              </td>
+              <td className="max-w-[260px] px-3 py-2 text-xs text-slate-600">
+                <span className="block truncate">{document.source_s3_key || document.job_id || document.error || '-'}</span>
+              </td>
+              <td className="px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => onOpenDocument(document.document_id)}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                  Abrir
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
