@@ -77,8 +77,7 @@ export function ProgressIndicator({ progress }: ProgressIndicatorProps) {
         </div>
       </div>
 
-      {progress.step !== 'idle' && 
-       progress.step !== 'completed' && 
+      {progress.step !== 'completed' && 
        progress.step !== 'error' && 
        (progress.step === 'uploading' || 
         progress.step === 'creating_batch' || 

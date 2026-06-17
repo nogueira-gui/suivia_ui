@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { FileText, Copy, Download, CheckCircle, Receipt, AlertCircle, Building2, Calendar, DollarSign, Hash, Package, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import type { DocumentResult } from '../types/document';
@@ -215,9 +216,6 @@ export function ResultDisplay({ result, onReprocess }: ResultDisplayProps) {
   const documentType = result.extracted?.document_type || 'generic';
   const isNotaFiscal = documentType === 'nota_fiscal';
   const isRecibo = documentType === 'recibo';
-  const isContrato = documentType === 'contrato';
-  const isBoleto = documentType === 'boleto';
-  const isOrdemServico = documentType === 'ordem_servico';
   const hasError = !!result.extracted?.error;
   const notaFiscalData = result.extracted?.nota_fiscal;
   
@@ -230,15 +228,12 @@ export function ResultDisplay({ result, onReprocess }: ResultDisplayProps) {
   
   // Verifica se há dados válidos na nota fiscal (mesmo que parcialmente preenchidos)
   // Considera válido se tem cabeçalho com pelo menos um campo preenchido (não vazio)
-  const hasNotaFiscalData = notaFiscalData && (
-    (notaFiscalData.cabecalho && Object.keys(notaFiscalData.cabecalho).some(key => {
-      const value = notaFiscalData.cabecalho[key];
-      return value !== null && value !== undefined && value !== '' && 
-             (typeof value !== 'number' || value !== 0) &&
-             (typeof value !== 'object' || (Array.isArray(value) && value.length > 0));
+  const hasNotaFiscalData = !!(notaFiscalData && (
+    (notaFiscalData.cabecalho && Object.values(notaFiscalData.cabecalho).some(value => {
+      return value !== null && value !== undefined && value !== '' && value !== 0;
     })) || 
-    (notaFiscalData.itens && Array.isArray(notaFiscalData.itens) && notaFiscalData.itens.length > 0)
-  );
+    (Array.isArray(notaFiscalData.itens) && notaFiscalData.itens.length > 0)
+  ));
   // Suporta ambos os formatos: snake_case e camelCase
   const extractionMethod = result.extraction_method || result.extractionMethod;
   const isDetectText = extractionMethod === 'detect_text';

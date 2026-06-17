@@ -1,4 +1,12 @@
-export type DocumentStatus = 'PENDING_UPLOAD' | 'PROCESSING' | 'COMPLETED' | 'ERROR' | 'PENDING_REPROCESS';
+export type DocumentStatus =
+  | 'PENDING_UPLOAD'
+  | 'PROCESSING'
+  | 'COMPLETED'
+  | 'ERROR'
+  | 'LOW_CONFIDENCE'
+  | 'NEEDS_REVIEW'
+  | 'PENDING_REPROCESS'
+  | 'DUPLICATE';
 
 export interface UploadUrlResponse {
   document_id?: string;
@@ -32,6 +40,26 @@ export interface DocumentResult {
   sourceS3Key?: string;
   created_at?: string;
   createdAt?: string;
+  updated_at?: string;
+  updatedAt?: string;
+  document_type?: string;
+  documentType?: string;
+  textract_operation?: string;
+  textractOperation?: string;
+  batch_id?: string;
+  batchId?: string;
+  file_hash?: string;
+  fileHash?: string;
+  duplicate_of?: string;
+  duplicateOf?: string;
+  confidence_min?: number;
+  confidenceMin?: number;
+  review_required?: boolean;
+  reviewRequired?: boolean;
+  raw_text_s3_key?: string;
+  rawTextS3Key?: string;
+  result_s3_key?: string;
+  resultS3Key?: string;
   raw_text?: string;
   rawText?: string;
   extraction_method?: string;
@@ -41,6 +69,7 @@ export interface DocumentResult {
   job_message?: string;
   jobMessage?: string;
   extracted?: {
+    _use_llm?: boolean;
     // Para documentos genéricos
     line_count?: number;
     word_count?: number;
@@ -51,12 +80,28 @@ export interface DocumentResult {
     // Para notas fiscais
     document_type?: string;
     nota_fiscal?: NotaFiscalData;
+    recibo?: Record<string, unknown>;
     raw_expense_data?: RawExpenseData;
     
     // Quando há erro de validação
     error?: string;
   };
   error?: string;
+}
+
+export interface DocumentListResponse {
+  items: DocumentResult[];
+  last_evaluated_key?: unknown;
+  last_evaluated_keys?: unknown;
+}
+
+export type WorkQueueResponse = DocumentListResponse;
+
+export interface DocumentFilters {
+  tenantId?: string;
+  yearMonth?: string;
+  status?: DocumentStatus | 'ALL';
+  limit?: number;
 }
 
 export interface NotaFiscalData {
@@ -110,7 +155,7 @@ export interface RawExpenseData {
       confidence: number;
     };
   };
-  line_items: any[];
+  line_items: unknown[];
   average_confidence?: number;
 }
 
@@ -125,7 +170,7 @@ export interface UploadProgress {
 // Batch Processing Types
 // ============================================================================
 
-export type BatchStatus = 'PROCESSING' | 'COMPLETED' | 'FAILED';
+export type BatchStatus = 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'LOW_CONFIDENCE' | 'NEEDS_REVIEW';
 
 export interface BatchDocument {
   document_id: string;
@@ -141,9 +186,27 @@ export interface BatchDocument {
 export interface BatchStatistics {
   total: number;
   completed: number;
+  low_confidence?: number;
+  needs_review?: number;
   processing: number;
   error: number;
   pending: number;
+}
+
+export interface BatchListItem {
+  batch_id: string;
+  status: BatchStatus;
+  total_documents?: number;
+  completed_documents?: number;
+  processing_documents?: number;
+  error_documents?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface BatchListResponse {
+  batches: BatchListItem[];
+  last_evaluated_key?: unknown;
 }
 
 export interface BatchResponse {

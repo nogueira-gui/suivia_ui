@@ -1,81 +1,68 @@
-import type { BatchResponse, BatchStatusResponse } from '../types/document';
+import type { BatchListResponse, BatchResponse, BatchStatusResponse } from '../types/document';
+import { API_BASE_URL } from './documentService';
 
-// URL do ECS (ALB) para batch processing - se não definida, usa API Gateway
-const ECS_BASE_URL = import.meta.env.VITE_ECS_BASE_URL || import.meta.env.VITE_API_BASE_URL || 'https://hjutldvak8.execute-api.us-east-1.amazonaws.com/dev';
+const BATCH_BASE_URL = import.meta.env.VITE_ECS_BASE_URL || API_BASE_URL;
 const API_KEY = import.meta.env.VITE_API_KEY || '';
 
-/**
- * Cria headers padrão para requisições à API Gateway
- */
-function getHeaders(includeContentType: boolean = true): HeadersInit {
+function getHeaders(includeContentType = true): HeadersInit {
   const headers: HeadersInit = {};
-  
+
   if (includeContentType) {
     headers['Content-Type'] = 'application/json';
   }
-  
+
   if (API_KEY) {
     headers['x-api-key'] = API_KEY;
   }
-  
+
   return headers;
 }
 
+async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(`${fallbackMessage}: ${response.statusText}${errorText ? ` - ${errorText}` : ''}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
 export class BatchService {
-  /**
-   * Cria um novo lote de processamento com múltiplos documentos
-   * 
-   * @param documentIds - Array de IDs de documentos já enviados para o S3
-   */
   static async createBatch(documentIds: string[]): Promise<BatchResponse> {
-    const response = await fetch(`${ECS_BASE_URL}/batch`, {
+    const response = await fetch(`${BATCH_BASE_URL}/batch`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({
-        documents: documentIds.map(id => ({ document_id: id }))
+        documents: documentIds.map((id) => ({ document_id: id })),
       }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to create batch: ${response.statusText} - ${errorText}`);
-    }
-
-    return response.json();
+    return readJson<BatchResponse>(response, 'Failed to create batch');
   }
 
-  /**
-   * Consulta o status de um lote de processamento
-   * 
-   * @param batchId - ID do lote
-   */
   static async getBatchStatus(batchId: string): Promise<BatchStatusResponse> {
-    const response = await fetch(`${ECS_BASE_URL}/batch/${batchId}`, {
+    const response = await fetch(`${BATCH_BASE_URL}/batch/${batchId}`, {
       method: 'GET',
       headers: getHeaders(),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to get batch status: ${response.statusText} - ${errorText}`);
-    }
-
-    return response.json();
+    return readJson<BatchStatusResponse>(response, 'Failed to get batch status');
   }
 
-  /**
-   * Faz polling do status do lote até que todos os documentos sejam processados
-   * 
-   * @param batchId - ID do lote
-   * @param onProgress - Callback chamado a cada atualização de status
-   * @param pollInterval - Intervalo entre verificações em ms (default: 5 segundos)
-   * @param maxAttempts - Número máximo de tentativas (default: 120 = 10 minutos)
-   */
+  static async listBatches(limit = 20): Promise<BatchListResponse> {
+    const response = await fetch(`${BATCH_BASE_URL}/batch?limit=${limit}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+
+    return readJson<BatchListResponse>(response, 'Failed to list batches');
+  }
+
   static async pollBatchStatus(
     batchId: string,
     onProgress?: (status: BatchStatusResponse, attempt: number, elapsed: number) => void,
-    pollInterval: number = 5000,
-    maxAttempts: number = 120
+    pollInterval = 5000,
+    maxAttempts = 120
   ): Promise<BatchStatusResponse> {
     const startTime = Date.now();
 
@@ -84,33 +71,23 @@ export class BatchService {
 
       try {
         const status = await this.getBatchStatus(batchId);
+        onProgress?.(status, attempt, elapsedSeconds);
 
-        if (onProgress) {
-          onProgress(status, attempt, elapsedSeconds);
-        }
-
-        // Se todos os documentos foram processados (com sucesso ou erro)
-        if (status.status === 'COMPLETED' || status.status === 'FAILED') {
+        if (['COMPLETED', 'FAILED', 'LOW_CONFIDENCE', 'NEEDS_REVIEW'].includes(status.status)) {
           return status;
         }
 
-        // Se ainda está processando, aguarda antes da próxima tentativa
         if (attempt < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, pollInterval));
+          await new Promise((resolve) => setTimeout(resolve, pollInterval));
         }
       } catch (err) {
-        // Se for erro de timeout ou rede, tenta novamente
         if (attempt === maxAttempts) {
           throw err;
         }
-        
-        // Aguarda um pouco mais em caso de erro (backoff)
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        await new Promise((resolve) => setTimeout(resolve, pollInterval));
       }
     }
 
-    // Retorna o último status conhecido
     return this.getBatchStatus(batchId);
   }
 }
-

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from 'react';
 import { CheckCircle, XCircle, Clock, FileText, AlertCircle, Eye, ChevronUp } from 'lucide-react';
 import type { BatchResult } from '../hooks/useBatchUpload';
@@ -135,13 +136,8 @@ export function BatchStatusDisplay({ result }: BatchStatusDisplayProps) {
           {documents.map((doc, index) => {
             const expanded = isExpanded(doc.document_id);
             // Verifica se há detalhes para exibir (extracted ou raw_text)
-            const hasExtracted = doc.extracted && (
-              (typeof doc.extracted === 'object' && Object.keys(doc.extracted).length > 0) ||
-              doc.extracted.raw_text || 
-              doc.extracted.rawText ||
-              doc.extracted.nota_fiscal ||
-              doc.extracted.raw_expense_data
-            );
+            const extracted = doc.extracted;
+            const hasExtracted = !!(extracted && typeof extracted === 'object' && Object.keys(extracted).length > 0);
             const hasRawText = doc.raw_text && doc.raw_text.trim().length > 0;
             const hasDetails = doc.status === 'COMPLETED' && (hasExtracted || hasRawText);
             

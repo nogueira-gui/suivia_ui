@@ -1,29 +1,53 @@
-import type { UploadUrlResponse, ProcessResponse, DocumentResult } from '../types/document';
+import type {
+  DocumentFilters,
+  DocumentListResponse,
+  DocumentResult,
+  ProcessResponse,
+  UploadUrlResponse,
+  WorkQueueResponse,
+} from '../types/document';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://hjutldvak8.execute-api.us-east-1.amazonaws.com/dev';
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || 'https://r6q62ckmo8.execute-api.us-east-1.amazonaws.com/dev';
 const API_KEY = import.meta.env.VITE_API_KEY || '';
 
-/**
- * Cria headers padrão para requisições à API Gateway
- */
-function getHeaders(includeContentType: boolean = true): HeadersInit {
+function getHeaders(includeContentType = true): HeadersInit {
   const headers: HeadersInit = {};
-  
+
   if (includeContentType) {
     headers['Content-Type'] = 'application/json';
   }
-  
+
   if (API_KEY) {
     headers['x-api-key'] = API_KEY;
   }
-  
+
   return headers;
 }
 
+function buildQuery(params: Record<string, string | number | undefined>): string {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') {
+      query.set(key, String(value));
+    }
+  });
+
+  const queryString = query.toString();
+  return queryString ? `?${queryString}` : '';
+}
+
+async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`${fallbackMessage}: ${response.status} ${response.statusText}${text ? ` - ${text}` : ''}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
 export class DocumentService {
-  /**
-   * Detecta o content-type baseado na extensão do arquivo
-   */
   private static getContentType(filename: string): string {
     const extension = filename.split('.').pop()?.toLowerCase();
     switch (extension) {
@@ -40,47 +64,40 @@ export class DocumentService {
   }
 
   static async requestUploadUrl(
-    filename: string, 
+    filename: string,
     extractionMethod?: string,
     documentType?: string
   ): Promise<UploadUrlResponse> {
-    const contentType = this.getContentType(filename);
-    
-    const body: Record<string, any> = {
+    const body: Record<string, unknown> = {
       filename,
-      content_type: contentType,
+      content_type: this.getContentType(filename),
     };
-    
-    // Adiciona document_type apenas se fornecido
+
     if (documentType) {
       body.document_type = documentType;
     }
-    
-    // Adiciona extraction_method apenas se fornecido
+
     if (extractionMethod) {
       body.extraction_method = extractionMethod;
     }
-    
+
     const response = await fetch(`${API_BASE_URL}/documents`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(body),
     });
 
-    if (!response.ok) {
-      throw new Error(`Failed to request upload URL: ${response.statusText}`);
-    }
-
-    return response.json();
+    return readJson<UploadUrlResponse>(response, 'Failed to request upload URL');
   }
 
   static async uploadToS3(uploadUrl: string, file: File, contentType: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      
+
       xhr.open('PUT', uploadUrl, true);
       xhr.setRequestHeader('Content-Type', contentType);
-      
+      xhr.timeout = 300000;
+
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve();
@@ -88,48 +105,38 @@ export class DocumentService {
           reject(new Error(`Failed to upload file to S3: ${xhr.status} ${xhr.statusText} - ${xhr.responseText}`));
         }
       };
-      
-      xhr.onerror = () => {
-        reject(new Error(`Network error during S3 upload. Status: ${xhr.status}`));
-      };
-      
-      xhr.ontimeout = () => {
-        reject(new Error('Upload to S3 timed out'));
-      };
-      
-      // Timeout de 5 minutos para uploads grandes
-      xhr.timeout = 300000;
-      
+
+      xhr.onerror = () => reject(new Error(`Network error during S3 upload. Status: ${xhr.status}`));
+      xhr.ontimeout = () => reject(new Error('Upload to S3 timed out'));
       xhr.send(file);
     });
   }
 
-  static async processDocument(documentId: string, useLlm?: boolean, forceReprocess?: boolean): Promise<ProcessResponse> {
-    const body: Record<string, any> = {
-      documentId: documentId,
+  static async processDocument(
+    documentId: string,
+    useLlm?: boolean,
+    forceReprocess?: boolean
+  ): Promise<ProcessResponse> {
+    const body: Record<string, unknown> = {
+      document_id: documentId,
+      documentId,
     };
-    
-    // Adiciona use_llm apenas se fornecido
+
     if (useLlm !== undefined) {
       body.use_llm = useLlm;
     }
-    
-    // Adiciona force_reprocess apenas se fornecido
+
     if (forceReprocess !== undefined) {
       body.force_reprocess = forceReprocess;
     }
-    
+
     const response = await fetch(`${API_BASE_URL}/documents/process`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(body),
     });
 
-    if (!response.ok) {
-      throw new Error(`Failed to process document: ${response.statusText}`);
-    }
-
-    return response.json();
+    return readJson<ProcessResponse>(response, 'Failed to process document');
   }
 
   static async getDocumentStatus(documentId: string): Promise<DocumentResult> {
@@ -137,40 +144,60 @@ export class DocumentService {
       headers: getHeaders(),
     });
 
-    if (!response.ok) {
-      throw new Error(`Failed to get document status: ${response.statusText}`);
-    }
-
-    return response.json();
+    return readJson<DocumentResult>(response, 'Failed to get document status');
   }
 
-  /**
-   * Verifica o status do job e processa automaticamente se concluído
-   * Este é o novo endpoint que faz polling ativo no Textract
-   * 
-   * @param documentId - ID do documento
-   * @param jobId - (Opcional) Job ID retornado pelo /process. Se fornecido, consulta direto o Textract
-   */
+  static async listDocuments(filters: DocumentFilters = {}): Promise<DocumentListResponse> {
+    const response = await fetch(
+      `${API_BASE_URL}/documents${buildQuery({
+        tenant_id: filters.tenantId || 'default',
+        year_month: filters.yearMonth,
+        status: filters.status && filters.status !== 'ALL' ? filters.status : undefined,
+        limit: filters.limit || 50,
+      })}`,
+      { headers: getHeaders() }
+    );
+
+    return readJson<DocumentListResponse>(response, 'Failed to list documents');
+  }
+
+  static async listWorkQueue(filters: DocumentFilters = {}): Promise<WorkQueueResponse> {
+    const response = await fetch(
+      `${API_BASE_URL}/documents/work-queue${buildQuery({
+        tenant_id: filters.tenantId || 'default',
+        status: filters.status && filters.status !== 'ALL' ? filters.status : undefined,
+        limit: filters.limit || 50,
+      })}`,
+      { headers: getHeaders() }
+    );
+
+    return readJson<WorkQueueResponse>(response, 'Failed to list review queue');
+  }
+
   static async checkDocumentStatus(documentId: string, jobId?: string): Promise<DocumentResult> {
     const response = await fetch(`${API_BASE_URL}/documents/${documentId}/check-status`, {
       method: 'POST',
       headers: getHeaders(),
-      // ⭐ NOVO: Passa jobId no body se fornecido (camelCase para backend Java)
-      body: jobId ? JSON.stringify({ jobId: jobId }) : undefined,
+      body: jobId ? JSON.stringify({ job_id: jobId, jobId }) : undefined,
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to check document status: ${response.statusText} - ${errorText}`);
-    }
-
-    const data = await response.json();
-    // Debug: verificar se extraction_method está presente
-    if (process.env.NODE_ENV === 'development') {
-      console.log('check-status response:', data);
-      console.log('extraction_method:', data.extraction_method || data.extractionMethod);
+    const data = await readJson<DocumentResult>(response, 'Failed to check document status');
+    if (import.meta.env.DEV) {
+      console.debug('check-status response:', data);
     }
     return data;
+  }
+
+  static async reprocessDocument(documentId: string, extractionMethod?: string): Promise<ProcessResponse> {
+    const response = await fetch(`${API_BASE_URL}/documents/${documentId}/reprocess`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        extraction_method: extractionMethod,
+      }),
+    });
+
+    return readJson<ProcessResponse>(response, 'Failed to reprocess document');
   }
 
   static async pollDocumentStatus(
@@ -178,23 +205,18 @@ export class DocumentService {
     jobId?: string,
     onProgress?: (result: DocumentResult, attempt: number, elapsed: number) => void
   ): Promise<DocumentResult> {
-    // Timeout de 10 minutos (conforme recomendação do backend)
-    const maxAttempts = 120; // 120 tentativas * 5 segundos = 10 minutos
-    const pollInterval = 5000; // 5 segundos entre tentativas
+    const maxAttempts = 120;
+    const pollInterval = 5000;
     const startTime = Date.now();
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
 
       try {
-        // ⭐ NOVO: Usa o novo endpoint que faz polling ativo no Textract COM job_id
         const result = await this.checkDocumentStatus(documentId, jobId);
+        onProgress?.(result, attempt, elapsedSeconds);
 
-        if (onProgress) {
-          onProgress(result, attempt, elapsedSeconds);
-        }
-
-        if (result.status === 'COMPLETED') {
+        if (['COMPLETED', 'LOW_CONFIDENCE', 'NEEDS_REVIEW'].includes(result.status)) {
           return result;
         }
 
@@ -202,34 +224,50 @@ export class DocumentService {
           throw new Error(result.error || 'Falha no processamento do documento');
         }
 
-        // Se o job não foi encontrado e o documento foi resetado, para o polling
         const jobStatus = result.job_status || result.jobStatus;
         if (result.status === 'PENDING_REPROCESS' || jobStatus === 'NOT_FOUND') {
           return result;
         }
 
-        // Se ainda está processando, aguarda antes da próxima tentativa
         if (attempt < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, pollInterval));
+          await new Promise((resolve) => setTimeout(resolve, pollInterval));
         }
       } catch (err) {
-        // Se for erro de timeout ou rede, tenta novamente
         if (attempt === maxAttempts) {
           throw err;
         }
-        
-        // Aguarda um pouco mais em caso de erro (backoff)
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        await new Promise((resolve) => setTimeout(resolve, pollInterval));
       }
     }
 
-    throw new Error(
-      `Timeout: O processamento do documento excedeu o tempo máximo de ${maxAttempts * pollInterval / 60000} minutos`
-    );
+    throw new Error(`Timeout: o processamento excedeu ${maxAttempts * pollInterval / 60000} minutos`);
   }
 
   static downloadText(text: string, filename: string): void {
     const blob = new Blob([text], { type: 'text/plain' });
+    this.downloadBlob(blob, filename);
+  }
+
+  static downloadJson(data: unknown, filename: string): void {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    this.downloadBlob(blob, filename);
+  }
+
+  static downloadCsv(rows: Array<Record<string, unknown>>, filename: string): void {
+    const headers = ['document_id', 'status', 'document_type', 'extraction_method', 'created_at', 'updated_at'];
+    const csvRows = [
+      headers.join(','),
+      ...rows.map((row) =>
+        headers
+          .map((header) => `"${String(row[header] ?? '').replace(/"/g, '""')}"`)
+          .join(',')
+      ),
+    ];
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8' });
+    this.downloadBlob(blob, filename);
+  }
+
+  private static downloadBlob(blob: Blob, filename: string): void {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

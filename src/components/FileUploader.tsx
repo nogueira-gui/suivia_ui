@@ -9,7 +9,6 @@ interface FileUploaderProps {
 }
 
 export function FileUploader({ onFileSelect, onFilesSelect, disabled, multiple = false }: FileUploaderProps) {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [validationError, setValidationError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -84,13 +83,11 @@ export function FileUploader({ onFileSelect, onFilesSelect, disabled, multiple =
       const error = validateFile(file);
       if (error) {
         setValidationError(error);
-        setSelectedFile(null);
         setSelectedFiles([]);
         return;
       }
 
       setValidationError(null);
-      setSelectedFile(file);
       setSelectedFiles([file]);
       onFileSelect(file);
     }

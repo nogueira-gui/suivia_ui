@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { DocumentService } from '../services/documentService';
 import { BatchService } from '../services/batchService';
-import type { BatchStatusResponse, UploadUrlResponse, DocumentStatus } from '../types/document';
+import type { BatchStatus, DocumentResult, UploadUrlResponse, DocumentStatus } from '../types/document';
 
 interface BatchProgress {
   step: 'idle' | 'uploading' | 'creating_batch' | 'processing' | 'completed' | 'error';
@@ -12,12 +12,14 @@ interface BatchProgress {
   totalFiles?: number;
 }
 
-interface BatchResult {
+export interface BatchResult {
   batch_id: string;
-  status: 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  status: BatchStatus;
   statistics: {
     total: number;
     completed: number;
+    low_confidence?: number;
+    needs_review?: number;
     processing: number;
     error: number;
     pending: number;
@@ -26,7 +28,7 @@ interface BatchResult {
     document_id: string;
     status: DocumentStatus;
     error?: string;
-    extracted?: any;
+    extracted?: DocumentResult['extracted'];
     raw_text?: string;
     job_id?: string;
     source_s3_key?: string;
@@ -148,7 +150,7 @@ export function useBatchUpload() {
       
       const finalStatus = await BatchService.pollBatchStatus(
         batchResponse.batch_id,
-        (status, attempt, elapsed) => {
+        (status) => {
           const completed = status.statistics.completed;
           const total = status.statistics.total;
           const progressValue = Math.floor((completed / total) * 30) + 60; // 60-90%
